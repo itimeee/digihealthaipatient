@@ -210,11 +210,24 @@ def page_login():
     Homepage with login form
     หน้าแรก - ใส่ชื่อและอีเมล
     """
-    # Center the title / จัดหัวข้อกลาง
-    st.markdown("<h1 style='text-align: center;'>DigiHealth AI Patient</h1>",
-                unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align: center;'>Psychiatric Training Simulator</h3>",
-                unsafe_allow_html=True)
+    # Center the title with medical styling / จัดหัวข้อกลางพร้อมสไตล์ทางการแพทย์
+    st.markdown("""
+        <div style='text-align: center; padding: 30px 0;'>
+            <div style='background: linear-gradient(135deg, #4a90a4 0%, #5ba3b8 100%);
+                        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+                        background-clip: text;'>
+                <h1 style='font-size: 3.5em; font-weight: 700; margin: 0; padding: 0;'>
+                    🏥 DigiHealth AI Patient
+                </h1>
+            </div>
+            <p style='color: #5a7a8a; font-size: 1.3em; margin-top: 10px; font-weight: 400;'>
+                Psychiatric Training Simulator
+            </p>
+            <p style='color: #7a9aa8; font-size: 0.95em; margin-top: 5px;'>
+                Advanced Clinical Skills Development Platform
+            </p>
+        </div>
+    """, unsafe_allow_html=True)
 
     # Add some spacing / เพิ่มช่องว่าง
     st.markdown("<br>", unsafe_allow_html=True)
@@ -223,9 +236,19 @@ def page_login():
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
+        # Card container for inputs / กล่องสำหรับฟอร์ม
+        st.markdown("""
+            <div style='background: white; padding: 35px; border-radius: 20px;
+                        box-shadow: 0 8px 24px rgba(74, 144, 164, 0.12);
+                        border: 1px solid #e3f2fd;'>
+            </div>
+        """, unsafe_allow_html=True)
+
         # Input fields / ช่องกรอกข้อมูล
-        name = st.text_input("Name / ชื่อ", value=st.session_state.user_name)
-        email = st.text_input("Email / อีเมล", value=st.session_state.user_email)
+        name = st.text_input("👤 Name / ชื่อ", value=st.session_state.user_name,
+                            placeholder="Enter your full name")
+        email = st.text_input("📧 Email / อีเมล", value=st.session_state.user_email,
+                             placeholder="your.email@example.com")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -259,21 +282,39 @@ def page_case_selection():
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.markdown("### Case A: Depression")
-        st.markdown("Active case for practice")
+        st.markdown("""
+            <div style='background: white; padding: 25px; border-radius: 16px;
+                        border: 2px solid #4a90a4; box-shadow: 0 4px 12px rgba(74, 144, 164, 0.15);'>
+                <h3 style='color: #2c5f7d; margin-top: 0;'>🧠 Case A: Depression</h3>
+                <p style='color: #5a7a8a; margin-bottom: 0;'>✅ Active case for practice</p>
+            </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
         if st.button("Select Case A", use_container_width=True, type="primary"):
             st.session_state.selected_case = "Case A"
             st.session_state.page = 'pre_brief'
             st.rerun()
 
     with col2:
-        st.markdown("### Case B: Anxiety")
-        st.markdown("🔒 Coming Soon")
+        st.markdown("""
+            <div style='background: #f8f9fa; padding: 25px; border-radius: 16px;
+                        border: 2px solid #e0e0e0; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);'>
+                <h3 style='color: #9e9e9e; margin-top: 0;'>😰 Case B: Anxiety</h3>
+                <p style='color: #9e9e9e; margin-bottom: 0;'>🔒 Coming Soon</p>
+            </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
         st.button("Case B (Disabled)", use_container_width=True, disabled=True)
 
     with col3:
-        st.markdown("### Case C: Psychosis")
-        st.markdown("🔒 Coming Soon")
+        st.markdown("""
+            <div style='background: #f8f9fa; padding: 25px; border-radius: 16px;
+                        border: 2px solid #e0e0e0; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);'>
+                <h3 style='color: #9e9e9e; margin-top: 0;'>🌀 Case C: Psychosis</h3>
+                <p style='color: #9e9e9e; margin-bottom: 0;'>🔒 Coming Soon</p>
+            </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
         st.button("Case C (Disabled)", use_container_width=True, disabled=True)
 
     # Back button / ปุ่มย้อนกลับ
@@ -400,14 +441,14 @@ def page_chat():
     with col2:
         # Change color based on time remaining / เปลี่ยนสีตามเวลาที่เหลือ
         if remaining_seconds > 300:  # More than 5 minutes
-            timer_color = "green"
+            timer_color = "#4a90a4"  # Medical blue
         elif remaining_seconds > 60:  # More than 1 minute
-            timer_color = "orange"
+            timer_color = "#e67e22"  # Warm orange for caution
         else:
-            timer_color = "red"
+            timer_color = "#c0392b"  # Deep red for urgency
 
         st.markdown(
-            f"<h2 style='text-align: center; color: {timer_color};'>⏱️ {format_time(remaining_seconds)}</h2>",
+            f"<h2 style='text-align: center; color: {timer_color}; font-weight: 600;'>⏱️ {format_time(remaining_seconds)}</h2>",
             unsafe_allow_html=True
         )
 
@@ -434,17 +475,21 @@ def page_chat():
             if message["role"] == "user":
                 # Doctor's message (right side) / ข้อความของแพทย์ (ขวา)
                 st.markdown(
-                    f"<div style='text-align: right; background-color: #E3F2FD; padding: 10px; "
-                    f"border-radius: 10px; margin: 5px 0;'>"
-                    f"<b>You:</b> {message['content']}</div>",
+                    f"<div style='text-align: right; background: linear-gradient(135deg, #4a90a4 0%, #5ba3b8 100%); "
+                    f"color: white; padding: 12px 16px; border-radius: 18px 18px 4px 18px; "
+                    f"margin: 8px 0; box-shadow: 0 2px 4px rgba(74, 144, 164, 0.2); max-width: 80%; "
+                    f"margin-left: auto;'>"
+                    f"<b style='color: #e3f2fd;'>You:</b> {message['content']}</div>",
                     unsafe_allow_html=True
                 )
             else:
                 # AI Patient's message (left side) / ข้อความของผู้ป่วย AI (ซ้าย)
                 st.markdown(
-                    f"<div style='text-align: left; background-color: #F5F5F5; padding: 10px; "
-                    f"border-radius: 10px; margin: 5px 0;'>"
-                    f"<b>Patient:</b> {message['content']}</div>",
+                    f"<div style='text-align: left; background-color: white; padding: 12px 16px; "
+                    f"border-radius: 18px 18px 18px 4px; margin: 8px 0; "
+                    f"border: 2px solid #e3f2fd; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08); "
+                    f"max-width: 80%; color: #37474f;'>"
+                    f"<b style='color: #2c5f7d;'>Patient:</b> {message['content']}</div>",
                     unsafe_allow_html=True
                 )
 
@@ -564,15 +609,151 @@ def main():
         initial_sidebar_state="collapsed"
     )
 
-    # Custom CSS for better UI / CSS ปรับแต่งหน้าตา
+    # Custom CSS for medical/psychiatric theme / CSS ธีมทางการแพทย์
     st.markdown("""
         <style>
-        .stButton>button {
-            border-radius: 8px;
-            height: 3em;
+        /* Medical/Psychiatric Theme - Soft Blue & White */
+        /* ธีมทางการแพทย์ - สีฟ้าอ่อนและขาว */
+
+        /* Main app background */
+        .stApp {
+            background: linear-gradient(135deg, #f8fbff 0%, #e8f4f8 100%);
         }
+
+        /* Headers with medical blue */
+        h1, h2, h3 {
+            color: #2c5f7d !important;
+            font-weight: 600 !important;
+        }
+
+        /* Primary buttons - Medical blue */
+        .stButton>button[kind="primary"] {
+            background-color: #4a90a4 !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 12px !important;
+            height: 3.5em !important;
+            font-weight: 500 !important;
+            box-shadow: 0 2px 8px rgba(74, 144, 164, 0.25) !important;
+            transition: all 0.3s ease !important;
+        }
+
+        .stButton>button[kind="primary"]:hover {
+            background-color: #3a7a8a !important;
+            box-shadow: 0 4px 12px rgba(74, 144, 164, 0.35) !important;
+            transform: translateY(-1px) !important;
+        }
+
+        /* Secondary buttons - Light blue */
+        .stButton>button[kind="secondary"] {
+            background-color: #e3f2fd !important;
+            color: #2c5f7d !important;
+            border: 1px solid #b3d9e8 !important;
+            border-radius: 12px !important;
+            height: 3.5em !important;
+            font-weight: 500 !important;
+            transition: all 0.3s ease !important;
+        }
+
+        .stButton>button[kind="secondary"]:hover {
+            background-color: #d0e9f7 !important;
+            border-color: #4a90a4 !important;
+        }
+
+        /* All other buttons */
+        .stButton>button {
+            border-radius: 12px !important;
+            height: 3em !important;
+            font-weight: 500 !important;
+            transition: all 0.3s ease !important;
+        }
+
+        /* Disabled buttons */
+        .stButton>button:disabled {
+            background-color: #e0e0e0 !important;
+            color: #9e9e9e !important;
+            opacity: 0.6 !important;
+        }
+
+        /* Text inputs with medical theme */
         .stTextInput>div>div>input {
-            border-radius: 8px;
+            border-radius: 12px !important;
+            border: 2px solid #b3d9e8 !important;
+            background-color: white !important;
+            padding: 12px !important;
+            transition: border-color 0.3s ease !important;
+        }
+
+        .stTextInput>div>div>input:focus {
+            border-color: #4a90a4 !important;
+            box-shadow: 0 0 0 3px rgba(74, 144, 164, 0.1) !important;
+        }
+
+        /* Info boxes - Calming blue */
+        .stAlert {
+            border-radius: 12px !important;
+            border-left: 4px solid #4a90a4 !important;
+            background-color: #f0f8fb !important;
+        }
+
+        /* Success messages */
+        .stSuccess {
+            background-color: #e8f5e9 !important;
+            border-left: 4px solid #66bb6a !important;
+            border-radius: 12px !important;
+        }
+
+        /* Warning messages */
+        .stWarning {
+            background-color: #fff8e1 !important;
+            border-left: 4px solid #ffa726 !important;
+            border-radius: 12px !important;
+        }
+
+        /* Error messages */
+        .stError {
+            background-color: #ffebee !important;
+            border-left: 4px solid #ef5350 !important;
+            border-radius: 12px !important;
+        }
+
+        /* Divider */
+        hr {
+            border-color: #b3d9e8 !important;
+            opacity: 0.5 !important;
+        }
+
+        /* Markdown text */
+        .stMarkdown {
+            color: #37474f !important;
+        }
+
+        /* Cards/Containers */
+        .element-container {
+            transition: all 0.3s ease !important;
+        }
+
+        /* Chat container styling */
+        [data-testid="stVerticalBlock"] {
+            gap: 0.5rem !important;
+        }
+
+        /* Form styling */
+        .stForm {
+            border: 2px solid #b3d9e8 !important;
+            border-radius: 12px !important;
+            padding: 1rem !important;
+            background-color: white !important;
+        }
+
+        /* Spinner */
+        .stSpinner > div {
+            border-top-color: #4a90a4 !important;
+        }
+
+        /* Professional medical look */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif !important;
         }
         </style>
     """, unsafe_allow_html=True)
