@@ -1,2 +1,159 @@
-# digihealthaipatient
-DigiHealth AI Patient
+# DigiHealth AI Patient 🏥
+
+A web application for training psychiatric residents on patient history taking skills.
+
+## Features
+
+- **Multi-page Flow**: Login → Case Selection → Pre-brief → Chat Simulation → Results
+- **AI-Powered Patient**: Uses Google Gemini AI to simulate realistic patient responses
+- **Timer System**: 30-minute countdown timer for realistic interview practice
+- **Data Logging**: Automatically saves session data to Google Sheets
+- **Clean UI**: Professional, minimalist design built with Streamlit
+
+## Tech Stack
+
+- **Python** + **Streamlit**: Web application framework
+- **Google Gemini AI**: Powers the AI patient responses
+- **Google Sheets API**: Stores session data
+- **Google Drive API**: Creates and manages sheets
+
+## Quick Start
+
+### 1. Clone the Repository
+
+```bash
+git clone <your-repo-url>
+cd digihealthaipatient
+```
+
+### 2. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Configure Secrets
+
+1. Create a `.streamlit` folder in the project root
+2. Copy `secrets.toml.example` to `.streamlit/secrets.toml`
+3. Follow the detailed setup guide in `GUIDE_GCP_SETUP.md` to:
+   - Create Google Cloud Project
+   - Enable APIs
+   - Get Service Account credentials
+   - Get Gemini API key
+4. Fill in your real credentials in `.streamlit/secrets.toml`
+
+### 4. Run Locally
+
+```bash
+streamlit run app.py
+```
+
+The app will open in your browser at `http://localhost:8501`
+
+## File Structure
+
+```
+digihealthaipatient/
+├── app.py                    # Main application code
+├── requirements.txt          # Python dependencies
+├── .gitignore               # Prevents secrets from being committed
+├── GUIDE_GCP_SETUP.md       # Detailed setup instructions
+├── secrets.toml.example     # Template for secrets file
+└── README.md                # This file
+```
+
+## Deployment to Streamlit Cloud
+
+1. Create a **private** GitHub repository
+2. Push your code (`.gitignore` will prevent secrets from being uploaded)
+3. Go to [share.streamlit.io](https://share.streamlit.io/)
+4. Click "New app" and select your repository
+5. In "Advanced settings", paste your entire `secrets.toml` content
+6. Click "Deploy"
+
+**Important**: Never commit `.streamlit/secrets.toml` or any JSON credential files!
+
+## Configuration
+
+You can easily customize these settings in `app.py`:
+
+```python
+# Line 17-18: Change AI Model
+MODEL_NAME = "gemini-2.0-flash-exp"
+
+# Line 21-22: Customize AI Patient Behavior
+SYSTEM_PROMPT = """Your custom system prompt here..."""
+
+# Line 25: Adjust Timer Duration
+TIMER_DURATION_MINUTES = 30
+
+# Line 290-315: Edit Case Information
+case_history = """Edit the patient case details here..."""
+```
+
+## Usage Guide
+
+### For Students:
+
+1. **Login**: Enter your name and email
+2. **Select Case**: Choose from available cases (Case A is active)
+3. **Read Pre-brief**: Review patient information and select Text Mode
+4. **Conduct Interview**: Chat with the AI patient using the 30-minute timer
+5. **End Session**: Click "End Case" when finished
+6. **Save Data**: Save your session to Google Sheets for review
+
+### For Administrators:
+
+- Case histories can be edited in `app.py` (lines 290-315)
+- System prompts can be modified at the top of `app.py`
+- Timer duration is configurable
+- Add more cases by following the existing pattern
+
+## Documentation
+
+- **Setup Guide**: See `GUIDE_GCP_SETUP.md` for detailed Google Cloud setup
+- **Code Comments**: All code includes bilingual comments (English/Thai)
+- **Modular Design**: Each page is a separate function for easy editing
+
+## Security Notes
+
+- ✅ Use a **private** GitHub repository
+- ✅ Never commit `.streamlit/secrets.toml`
+- ✅ Never share your API keys or credentials
+- ✅ The `.gitignore` file protects sensitive files
+
+## Troubleshooting
+
+### "Error loading Google credentials"
+- Verify your `secrets.toml` is correctly formatted
+- Check that all fields are copied from the JSON file
+- Ensure `private_key` is in triple quotes
+
+### "Error initializing Gemini"
+- Verify your Gemini API key is correct
+- Check for extra spaces or quotes in the key
+- Test the key at [Google AI Studio](https://aistudio.google.com/)
+
+### "Error creating Google Sheet"
+- Ensure Google Drive and Sheets APIs are enabled
+- Verify service account has Editor role
+- Check that `private_key` is complete
+
+For more troubleshooting help, see `GUIDE_GCP_SETUP.md`.
+
+## Support
+
+If you encounter issues:
+1. Check the Streamlit Cloud logs (if deployed)
+2. Verify all credentials in `secrets.toml`
+3. Ensure all APIs are enabled in Google Cloud Console
+4. Review the setup guide carefully
+
+## License
+
+This project is for educational purposes.
+
+## Credits
+
+Built with ❤️ for psychiatric education
