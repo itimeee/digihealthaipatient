@@ -28,6 +28,9 @@ TIMER_DURATION_MINUTES = 30
 # Get sheet ID from the URL: https://docs.google.com/spreadsheets/d/[SHEET_ID]/edit
 GOOGLE_SHEET_ID = "1motfqsOspQrVkWDtRqUxgfH_-3nDuqYGw9eXwEfQWoo"
 
+# Google Sheet ID for latest session data (overwrites each time) / ID ของ Google Sheet สำหรับข้อมูลเซสชันล่าสุด
+GOOGLE_SHEET_LATEST_ID = "1y7mhBgABMNDzRFPDmQa7kQqTE6q4h_Py02IvT2OmUM8"
+
 # ============================================================================
 # GOOGLE SHEETS SETUP / ตั้งค่า Google Sheets
 # ============================================================================
@@ -130,6 +133,96 @@ def save_session_to_sheet(user_name, user_email, chat_history):
     except Exception as e:
         st.error(f"Error saving to Google Sheet: {e}")
         return False
+
+
+def save_latest_session(user_name, user_email, chat_history):
+    """
+    Replace data in latest session sheet (for displaying most recent interview)
+    แทนที่ข้อมูลในชีทเซสชันล่าสุด (สำหรับแสดงการสัมภาษณ์ล่าสุด)
+
+    Args:
+        user_name: Name of the user / ชื่อผู้ใช้
+        user_email: Email of the user / อีเมลผู้ใช้
+        chat_history: List of chat messages / ประวัติการสนทนา
+    """
+    try:
+        # Get credentials / รับข้อมูลรับรอง
+        credentials = get_google_credentials()
+        if credentials is None:
+            return False
+
+        # Connect to Google Sheets / เชื่อมต่อ Google Sheets
+        gc = gspread.authorize(credentials)
+
+        # Open the latest session spreadsheet / เปิดสเปรดชีทเซสชันล่าสุด
+        spreadsheet = gc.open_by_key(GOOGLE_SHEET_LATEST_ID)
+        worksheet = spreadsheet.sheet1
+
+        # Clear all existing data / ลบข้อมูลเก่าทั้งหมด
+        worksheet.clear()
+
+        # Get current timestamp / รับเวลาปัจจุบัน
+        session_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Prepare all rows including headers / เตรียมแถวทั้งหมดรวมหัวตาราง
+        all_rows = []
+
+        # Add headers / เพิ่มหัวตาราง
+        headers = ["Session ID", "Timestamp", "User Name", "User Email", "Speaker", "Message"]
+        all_rows.append(headers)
+
+        # Add all chat messages / เพิ่มข้อความสนทนาทั้งหมด
+        for message in chat_history:
+            row = [
+                session_id,
+                session_time,
+                user_name,
+                user_email,
+                message["role"],
+                message["content"]
+            ]
+            all_rows.append(row)
+
+        # Write all rows at once / เขียนทุกแถวพร้อมกัน
+        worksheet.update('A1', all_rows)
+
+        return True
+
+    except Exception as e:
+        st.error(f"Error saving latest session: {e}")
+        return False
+
+
+def get_latest_session_data():
+    """
+    Get the latest session data from the sheet
+    ดึงข้อมูลเซสชันล่าสุดจากชีท
+
+    Returns:
+        List of dictionaries with session data / รายการข้อมูลเซสชัน
+    """
+    try:
+        # Get credentials / รับข้อมูลรับรอง
+        credentials = get_google_credentials()
+        if credentials is None:
+            return []
+
+        # Connect to Google Sheets / เชื่อมต่อ Google Sheets
+        gc = gspread.authorize(credentials)
+
+        # Open the latest session spreadsheet / เปิดสเปรดชีทเซสชันล่าสุด
+        spreadsheet = gc.open_by_key(GOOGLE_SHEET_LATEST_ID)
+        worksheet = spreadsheet.sheet1
+
+        # Get all data / ดึงข้อมูลทั้งหมด
+        data = worksheet.get_all_records()
+
+        return data
+
+    except Exception as e:
+        st.error(f"Error reading latest session data: {e}")
+        return []
 
 
 # ============================================================================
@@ -398,9 +491,12 @@ def page_pre_brief():
     # Radio button for mode selection / ปุ่มเลือกโหมด
     mode = st.radio(
         "Choose your preferred mode:",
-        options=['💬 Text Mode', '🎤 Voice Mode (Coming Soon)'],
+        options=[
+            '💬 Text Mode - Type your questions and responses',
+            '🎤 Voice Mode - Speak with the AI patient (Coming Soon)'
+        ],
         index=0,
-        horizontal=True,
+        horizontal=False,
         disabled=False,
         key='mode_selector'
     )
@@ -408,11 +504,13 @@ def page_pre_brief():
     # Store selected mode / บันทึกโหมดที่เลือก
     st.session_state.selected_mode = mode
 
+    st.markdown("<br>", unsafe_allow_html=True)
+
     # Show info about selected mode / แสดงข้อมูลเกี่ยวกับโหมดที่เลือก
     if 'Voice Mode' in mode:
-        st.info("🎤 Voice Mode will be available in a future update. Please select Text Mode to continue.")
+        st.info("🎤 **Voice Mode** will be available in a future update. This mode will allow you to speak naturally with the AI patient using voice recognition. Please select Text Mode to continue.")
     else:
-        st.success("✅ Text Mode selected. Click 'Start Case' when you're ready to begin.")
+        st.success("✅ **Text Mode selected.** You will type your questions and the AI patient will respond in text. Click 'Start Case' when you're ready to begin the interview.")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -491,6 +589,20 @@ def page_chat():
     with col3:
         if st.button("🛑 End Case", type="secondary", use_container_width=True):
             st.session_state.timer_active = False
+            # Auto-save to both sheets / บันทึกอัตโนมัติไปทั้งสองชีท
+            with st.spinner("Saving session data... / กำลังบันทึกข้อมูล..."):
+                # Save to main log sheet / บันทึกไปชีทบันทึกหลัก
+                save_session_to_sheet(
+                    st.session_state.user_name,
+                    st.session_state.user_email,
+                    st.session_state.chat_history
+                )
+                # Save to latest session sheet / บันทึกไปชีทเซสชันล่าสุด
+                save_latest_session(
+                    st.session_state.user_name,
+                    st.session_state.user_email,
+                    st.session_state.chat_history
+                )
             st.session_state.page = 'end'
             st.rerun()
 
@@ -529,6 +641,22 @@ def page_chat():
                     unsafe_allow_html=True
                 )
 
+    # Check if we need to get AI response / ตรวจสอบว่าต้องรับคำตอบจาก AI หรือไม่
+    if 'waiting_for_ai' in st.session_state and st.session_state.waiting_for_ai:
+        with st.spinner("Patient is responding... / ผู้ป่วยกำลังตอบ..."):
+            ai_response = get_ai_response(
+                st.session_state.chat_history,
+                st.session_state.case_context
+            )
+
+        # Add AI response to history / เพิ่มคำตอบ AI ในประวัติ
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": ai_response
+        })
+        st.session_state.waiting_for_ai = False
+        st.rerun()
+
     # Chat input / ช่องพิมพ์ข้อความ
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -537,32 +665,21 @@ def page_chat():
         user_input = st.text_input(
             "Your message / ข้อความของคุณ:",
             placeholder="Type your question or response here...",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            key="chat_input"
         )
         submit_button = st.form_submit_button("Send 📤", use_container_width=True)
 
     # Process user input / ประมวลผลข้อความ
     if submit_button and user_input:
         if st.session_state.timer_active:
-            # Add user message to history / เพิ่มข้อความผู้ใช้ในประวัติ
+            # Add user message to history immediately / เพิ่มข้อความผู้ใช้ในประวัติทันที
             st.session_state.chat_history.append({
                 "role": "user",
                 "content": user_input
             })
-
-            # Get AI response / รับคำตอบจาก AI
-            with st.spinner("Patient is responding... / ผู้ป่วยกำลังตอบ..."):
-                ai_response = get_ai_response(
-                    st.session_state.chat_history,
-                    st.session_state.case_context
-                )
-
-            # Add AI response to history / เพิ่มคำตอบ AI ในประวัติ
-            st.session_state.chat_history.append({
-                "role": "assistant",
-                "content": ai_response
-            })
-
+            # Set flag to get AI response on next render / ตั้งค่าเพื่อรับคำตอบ AI ในรอบถัดไป
+            st.session_state.waiting_for_ai = True
             st.rerun()
         else:
             st.warning("⏰ Time's up! Please end the case.")
@@ -579,53 +696,77 @@ def page_chat():
 
 def page_end():
     """
-    End page - save data and show results
-    หน้าจบการฝึกซ้อม - บันทึกข้อมูลและแสดงผล
+    End page - display session results and interview log
+    หน้าจบการฝึกซ้อม - แสดงผลและบันทึกการสัมภาษณ์
     """
     st.title("Session Complete / เสร็จสิ้นการฝึกซ้อม")
 
     # Show summary / แสดงสรุป
     st.success(f"✅ Interview completed by {st.session_state.user_name}")
+    st.success("💾 Your session data has been automatically saved!")
 
     # Calculate session duration / คำนวณระยะเวลา
-    if st.session_state.start_time:
-        duration = datetime.now() - st.session_state.start_time
-        minutes = int(duration.total_seconds() // 60)
-        seconds = int(duration.total_seconds() % 60)
-        st.info(f"⏱️ Session Duration: {minutes} minutes {seconds} seconds")
+    col1, col2 = st.columns(2)
 
-    # Show message count / แสดงจำนวนข้อความ
-    st.info(f"💬 Total Messages: {len(st.session_state.chat_history)}")
+    with col1:
+        if st.session_state.start_time:
+            duration = datetime.now() - st.session_state.start_time
+            minutes = int(duration.total_seconds() // 60)
+            seconds = int(duration.total_seconds() % 60)
+            st.info(f"⏱️ **Session Duration**\n\n{minutes} minutes {seconds} seconds")
+
+    with col2:
+        # Show message count / แสดงจำนวนข้อความ
+        st.info(f"💬 **Total Messages**\n\n{len(st.session_state.chat_history)} messages")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Save data button / ปุ่มบันทึกข้อมูล
-    if st.session_state.sheet_url is None:
-        if st.button("💾 Save Session Data", type="primary", use_container_width=True):
-            with st.spinner("Saving data to Google Sheets... / กำลังบันทึกข้อมูล..."):
-                success = save_session_to_sheet(
-                    st.session_state.user_name,
-                    st.session_state.user_email,
-                    st.session_state.chat_history
-                )
+    # Display interview transcript / แสดงบันทึกการสัมภาษณ์
+    st.subheader("📋 Interview Transcript / บันทึกการสัมภาษณ์")
 
-                if success:
-                    st.success("✅ Data saved successfully!")
-                    st.rerun()
-                else:
-                    st.error("❌ Failed to save data. Please check your Google Sheets configuration.")
+    # Get latest session data from sheet / ดึงข้อมูลเซสชันล่าสุดจากชีท
+    with st.spinner("Loading interview data... / กำลังโหลดข้อมูล..."):
+        session_data = get_latest_session_data()
+
+    if session_data:
+        # Display in a nice format / แสดงในรูปแบบที่สวยงาม
+        for idx, row in enumerate(session_data):
+            speaker = row.get('Speaker', '')
+            message = row.get('Message', '')
+
+            if speaker == 'user':
+                # Doctor's message / ข้อความของแพทย์
+                st.markdown(f"""
+                    <div style='background: linear-gradient(135deg, #4a90a4 0%, #5ba3b8 100%);
+                                color: white; padding: 12px 16px; border-radius: 12px;
+                                margin: 8px 0;'>
+                        <b>👨‍⚕️ You:</b><br>{message}
+                    </div>
+                """, unsafe_allow_html=True)
+            elif speaker == 'assistant':
+                # Patient's message / ข้อความของผู้ป่วย
+                st.markdown(f"""
+                    <div style='background-color: white; padding: 12px 16px;
+                                border-radius: 12px; margin: 8px 0;
+                                border: 2px solid #e3f2fd;'>
+                        <b style='color: #2c5f7d;'>🧑 Patient:</b><br>{message}
+                    </div>
+                """, unsafe_allow_html=True)
+
+        st.success(f"✅ Displayed {len(session_data)} interview exchanges")
     else:
-        st.success("✅ Data has been saved!")
-        st.markdown(f"📊 [View Your Session Data]({st.session_state.sheet_url})")
+        st.warning("No interview data found. The session may not have been saved properly.")
 
     st.markdown("<br><br>", unsafe_allow_html=True)
 
     # Start new session button / ปุ่มเริ่มใหม่
-    if st.button("🔄 Start New Session", use_container_width=True):
-        # Clear all session state / ล้าง session state ทั้งหมด
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.rerun()
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🔄 Start New Session", use_container_width=True, type="primary"):
+            # Clear all session state / ล้าง session state ทั้งหมด
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
 
 
 # ============================================================================
