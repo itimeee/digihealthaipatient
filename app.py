@@ -24,6 +24,10 @@ SYSTEM_PROMPT = """You are a patient in a psychiatric clinic. Answer questions n
 # Timer Duration (in minutes) / ระยะเวลาจับเวลา (นาที)
 TIMER_DURATION_MINUTES = 30
 
+# Google Drive Folder ID for saving sheets / โฟลเดอร์ Google Drive สำหรับบันทึกไฟล์
+# Get folder ID from the folder URL: https://drive.google.com/drive/folders/[FOLDER_ID]
+GOOGLE_DRIVE_FOLDER_ID = "1hwOcudwxLXG31XY9yVO1bM003mNchBJq"
+
 # ============================================================================
 # GOOGLE SHEETS SETUP / ตั้งค่า Google Sheets
 # ============================================================================
@@ -78,8 +82,8 @@ def create_new_sheet(user_name, user_email, chat_history):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         sheet_name = f"DigiHealth_{user_name.replace(' ', '_')}_{timestamp}"
 
-        # Create new spreadsheet / สร้างสเปรดชีทใหม่
-        spreadsheet = gc.create(sheet_name)
+        # Create new spreadsheet in specified folder / สร้างสเปรดชีทใหม่ในโฟลเดอร์ที่กำหนด
+        spreadsheet = gc.create(sheet_name, folder_id=GOOGLE_DRIVE_FOLDER_ID)
         worksheet = spreadsheet.sheet1
 
         # Prepare header row / เตรียมหัวตาราง
