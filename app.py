@@ -121,19 +121,23 @@ def create_new_sheet(user_name, user_email, chat_history):
 # GEMINI AI SETUP / ตั้งค่า Gemini AI
 # ============================================================================
 
-def initialize_gemini():
+@st.cache_resource
+def get_gemini_model():
     """
-    Initialize Gemini AI with API key from secrets
-    เริ่มต้น Gemini AI ด้วย API key จาก secrets
+    Initialize and cache Gemini model
+    เริ่มต้นและแคช Gemini model (ใช้ครั้งเดียว)
+
+    Using cache_resource ensures this only runs once and doesn't block page rendering
     """
     try:
         api_key = st.secrets["GEMINI_API_KEY"]
         genai.configure(api_key=api_key)
-        return True
+        model = genai.GenerativeModel(MODEL_NAME)
+        return model
     except Exception as e:
         st.error(f"Error initializing Gemini: {e}")
         st.error("Please add your GEMINI_API_KEY to secrets.toml")
-        return False
+        return None
 
 
 def get_ai_response(chat_history, case_context):
@@ -146,8 +150,11 @@ def get_ai_response(chat_history, case_context):
         case_context: Case information for context / ข้อมูลเคสสำหรับบริบท
     """
     try:
-        # Initialize the model / เริ่มต้นโมเดล
-        model = genai.GenerativeModel(MODEL_NAME)
+        # Get cached model / ดึงโมเดลที่แคชไว้
+        model = get_gemini_model()
+
+        if model is None:
+            return "AI model is not available. Please check your API configuration."
 
         # Build the conversation / สร้างการสนทนา
         # Start with system prompt and case context / เริ่มด้วยคำสั่งระบบและข้อมูลเคส
@@ -431,11 +438,6 @@ def page_chat():
     Main chat interface with timer
     หน้าสนทนากับ AI พร้อมตัวจับเวลา
     """
-    # Initialize Gemini AI once when entering chat page / เริ่มต้น Gemini AI ครั้งเดียวเมื่อเข้าหน้าแชท
-    if 'gemini_initialized' not in st.session_state:
-        initialize_gemini()
-        st.session_state.gemini_initialized = True
-
     st.title("Interview Simulation / การฝึกซ้อมสัมภาษณ์")
 
     # ========================================================================
