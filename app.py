@@ -10,6 +10,9 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime, timedelta
 import time
 
+# Import case configurations / นำเข้าการตั้งค่าเคส
+from cases import ALL_CASES, get_case_by_name, get_active_cases, get_inactive_cases
+
 # ============================================================================
 # CONFIGURATION / การตั้งค่า
 # ============================================================================
@@ -230,17 +233,22 @@ def get_latest_session_data():
 # ============================================================================
 
 @st.cache_resource
-def get_gemini_model():
+def get_gemini_model(model_name=None):
     """
     Initialize and cache Gemini model
     เริ่มต้นและแคช Gemini model (ใช้ครั้งเดียว)
+
+    Args:
+        model_name: Name of the model to use (optional, defaults to MODEL_NAME)
 
     Using cache_resource ensures this only runs once and doesn't block page rendering
     """
     try:
         api_key = st.secrets["GEMINI_API_KEY"]
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(MODEL_NAME)
+        # Use provided model_name or fall back to default
+        selected_model = model_name if model_name else MODEL_NAME
+        model = genai.GenerativeModel(selected_model)
         return model
     except Exception as e:
         st.error(f"Error initializing Gemini: {e}")
@@ -250,23 +258,27 @@ def get_gemini_model():
 
 def get_ai_response(chat_history, case_context):
     """
-    Get response from Gemini AI
-    รับคำตอบจาก Gemini AI
+    Get response from Gemini AI using case-specific configuration
+    รับคำตอบจาก Gemini AI โดยใช้การตั้งค่าเฉพาะของเคส
 
     Args:
         chat_history: List of previous messages / ประวัติการสนทนา
         case_context: Case information for context / ข้อมูลเคสสำหรับบริบท
     """
     try:
-        # Get cached model / ดึงโมเดลที่แคชไว้
-        model = get_gemini_model()
+        # Get case-specific model and prompt from session state / ดึงโมเดลและ prompt เฉพาะของเคส
+        case_model = st.session_state.get('case_model', MODEL_NAME)
+        case_prompt = st.session_state.get('case_system_prompt', SYSTEM_PROMPT)
+
+        # Get cached model with case-specific model name / ดึงโมเดลที่แคชไว้ตามชื่อของเคส
+        model = get_gemini_model(case_model)
 
         if model is None:
             return "AI model is not available. Please check your API configuration."
 
-        # Build the conversation / สร้างการสนทนา
-        # Start with system prompt and case context / เริ่มด้วยคำสั่งระบบและข้อมูลเคส
-        full_prompt = f"{SYSTEM_PROMPT}\n\nCase Context:\n{case_context}\n\n"
+        # Build the conversation using case-specific system prompt / สร้างการสนทนาโดยใช้ prompt เฉพาะของเคส
+        # Start with case-specific system prompt and case context / เริ่มด้วย prompt และข้อมูลเคสเฉพาะ
+        full_prompt = f"{case_prompt}\n\nCase Context:\n{case_context}\n\n"
 
         # Add chat history / เพิ่มประวัติการสนทนา
         for message in chat_history:
@@ -385,44 +397,95 @@ def page_case_selection():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Create 3 columns for case cards / สร้าง 3 คอลัมน์สำหรับการ์ดเคส
+    # Create rows of case cards / สร้างแถวของการ์ดเคส
+    # First row: Cases A, B, C
     col1, col2, col3 = st.columns(3)
 
-    with col1:
-        st.markdown("""
-            <div style='background: white; padding: 25px; border-radius: 16px;
-                        border: 2px solid #4a90a4; box-shadow: 0 4px 12px rgba(74, 144, 164, 0.15);'>
-                <h3 style='color: #2c5f7d; margin-top: 0;'>📋 Case A</h3>
-                <p style='color: #5a7a8a; margin-bottom: 0;'>✅ Active case for practice</p>
-            </div>
-        """, unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("Select Case A", use_container_width=True, type="primary"):
-            st.session_state.selected_case = "Case A"
-            st.session_state.page = 'pre_brief'
-            st.rerun()
+    for idx, col in enumerate([col1, col2, col3]):
+        if idx < len(ALL_CASES):
+            case = ALL_CASES[idx]
+            with col:
+                # Determine card style based on active status / กำหนดสไตล์ตามสถานะ
+                if case.IS_ACTIVE:
+                    card_bg = "white"
+                    border_color = "#4a90a4"
+                    shadow = "0 4px 12px rgba(74, 144, 164, 0.15)"
+                    title_color = "#2c5f7d"
+                    text_color = "#5a7a8a"
+                    status_text = f"✅ {case.CASE_TITLE}"
+                else:
+                    card_bg = "#f8f9fa"
+                    border_color = "#e0e0e0"
+                    shadow = "0 2px 8px rgba(0, 0, 0, 0.08)"
+                    title_color = "#9e9e9e"
+                    text_color = "#9e9e9e"
+                    status_text = "🔒 Coming Soon"
 
-    with col2:
-        st.markdown("""
-            <div style='background: #f8f9fa; padding: 25px; border-radius: 16px;
-                        border: 2px solid #e0e0e0; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);'>
-                <h3 style='color: #9e9e9e; margin-top: 0;'>📋 Case B</h3>
-                <p style='color: #9e9e9e; margin-bottom: 0;'>🔒 Coming Soon</p>
-            </div>
-        """, unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.button("Case B (Disabled)", use_container_width=True, disabled=True)
+                st.markdown(f"""
+                    <div style='background: {card_bg}; padding: 25px; border-radius: 16px;
+                                border: 2px solid {border_color}; box-shadow: {shadow};'>
+                        <h3 style='color: {title_color}; margin-top: 0;'>📋 {case.CASE_NAME}</h3>
+                        <p style='color: {text_color}; margin-bottom: 0; font-size: 0.9em;'>{status_text}</p>
+                    </div>
+                """, unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
 
-    with col3:
-        st.markdown("""
-            <div style='background: #f8f9fa; padding: 25px; border-radius: 16px;
-                        border: 2px solid #e0e0e0; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);'>
-                <h3 style='color: #9e9e9e; margin-top: 0;'>📋 Case C</h3>
-                <p style='color: #9e9e9e; margin-bottom: 0;'>🔒 Coming Soon</p>
-            </div>
-        """, unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.button("Case C (Disabled)", use_container_width=True, disabled=True)
+                if st.button(
+                    f"Select {case.CASE_NAME}" if case.IS_ACTIVE else f"{case.CASE_NAME} (Coming Soon)",
+                    use_container_width=True,
+                    type="primary" if case.IS_ACTIVE else "secondary",
+                    disabled=not case.IS_ACTIVE,
+                    key=f"case_button_{case.CASE_NAME}"
+                ):
+                    st.session_state.selected_case = case.CASE_NAME
+                    st.session_state.page = 'pre_brief'
+                    st.rerun()
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Second row: Cases D, E, F
+    col4, col5, col6 = st.columns(3)
+
+    for idx, col in enumerate([col4, col5, col6]):
+        case_idx = idx + 3
+        if case_idx < len(ALL_CASES):
+            case = ALL_CASES[case_idx]
+            with col:
+                # Determine card style based on active status / กำหนดสไตล์ตามสถานะ
+                if case.IS_ACTIVE:
+                    card_bg = "white"
+                    border_color = "#4a90a4"
+                    shadow = "0 4px 12px rgba(74, 144, 164, 0.15)"
+                    title_color = "#2c5f7d"
+                    text_color = "#5a7a8a"
+                    status_text = f"✅ {case.CASE_TITLE}"
+                else:
+                    card_bg = "#f8f9fa"
+                    border_color = "#e0e0e0"
+                    shadow = "0 2px 8px rgba(0, 0, 0, 0.08)"
+                    title_color = "#9e9e9e"
+                    text_color = "#9e9e9e"
+                    status_text = "🔒 Coming Soon"
+
+                st.markdown(f"""
+                    <div style='background: {card_bg}; padding: 25px; border-radius: 16px;
+                                border: 2px solid {border_color}; box-shadow: {shadow};'>
+                        <h3 style='color: {title_color}; margin-top: 0;'>📋 {case.CASE_NAME}</h3>
+                        <p style='color: {text_color}; margin-bottom: 0; font-size: 0.9em;'>{status_text}</p>
+                    </div>
+                """, unsafe_allow_html=True)
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                if st.button(
+                    f"Select {case.CASE_NAME}" if case.IS_ACTIVE else f"{case.CASE_NAME} (Coming Soon)",
+                    use_container_width=True,
+                    type="primary" if case.IS_ACTIVE else "secondary",
+                    disabled=not case.IS_ACTIVE,
+                    key=f"case_button_{case.CASE_NAME}"
+                ):
+                    st.session_state.selected_case = case.CASE_NAME
+                    st.session_state.page = 'pre_brief'
+                    st.rerun()
 
     # Back button / ปุ่มย้อนกลับ
     st.markdown("<br><br>", unsafe_allow_html=True)
@@ -440,44 +503,25 @@ def page_pre_brief():
     Pre-brief page with case information
     หน้าแสดงข้อมูลเคสก่อนเริ่มฝึกซ้อม
     """
-    st.title("Case Information / ข้อมูลเคส")
+    # Load selected case configuration / โหลดการตั้งค่าเคสที่เลือก
+    selected_case_name = st.session_state.get('selected_case', 'Case A')
+    case_config = get_case_by_name(selected_case_name)
 
-    # ========================================================================
-    # CASE HISTORY - YOU CAN EDIT THIS TEXT EASILY
-    # ข้อมูลเคส - คุณสามารถแก้ไขข้อความนี้ได้ง่าย ๆ
-    # ========================================================================
-    case_history = """
-    **Patient Profile:**
-    - Name: Ms. Sarah Thompson (pseudonym)
-    - Age: 28 years old
-    - Occupation: Software Developer
-    - Chief Complaint: "I've been feeling very sad and tired for the past 3 months"
+    if case_config is None:
+        st.error(f"Case '{selected_case_name}' not found. Redirecting...")
+        st.session_state.page = 'case_selection'
+        st.rerun()
+        return
 
-    **Presenting History:**
-    The patient reports experiencing persistent low mood, loss of interest in activities
-    she used to enjoy, difficulty sleeping, and decreased energy levels. She mentions
-    that these symptoms started after a significant work project ended.
+    st.title(f"Case Information / ข้อมูลเคส - {case_config.CASE_NAME}")
 
-    **Your Task:**
-    Conduct a comprehensive psychiatric history interview. Focus on:
-    - Present illness details
-    - Past psychiatric history
-    - Family history
-    - Social history
-    - Risk assessment (suicide, self-harm)
+    # Display case information from configuration / แสดงข้อมูลเคสจากการตั้งค่า
+    st.info(case_config.CASE_INFORMATION)
 
-    **Instructions:**
-    - Be professional and empathetic
-    - Use open-ended questions
-    - Listen actively to the patient's responses
-    - You have 30 minutes for this interview
-    """
-
-    # Display case information / แสดงข้อมูลเคส
-    st.info(case_history)
-
-    # Store case context in session state / บันทึกข้อมูลเคสใน session state
-    st.session_state.case_context = case_history
+    # Store case configuration in session state / บันทึกการตั้งค่าเคสใน session state
+    st.session_state.case_context = case_config.CASE_INFORMATION
+    st.session_state.case_system_prompt = case_config.SYSTEM_PROMPT
+    st.session_state.case_model = case_config.MODEL_NAME
 
     st.markdown("<br>", unsafe_allow_html=True)
 
