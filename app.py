@@ -492,13 +492,14 @@ def page_pre_brief():
     mode = st.radio(
         "Choose your preferred mode:",
         options=[
-            '💬 Text Mode - Type your questions and responses',
-            '🎤 Voice Mode - Speak with the AI patient (Coming Soon)'
+            '💬 **Text Mode** - Type your questions and responses',
+            '🎤 **Voice Mode** - Speak with the AI patient (Coming Soon)'
         ],
         index=0,
         horizontal=False,
         disabled=False,
-        key='mode_selector'
+        key='mode_selector',
+        help="Select how you want to interact with the AI patient"
     )
 
     # Store selected mode / บันทึกโหมดที่เลือก
@@ -641,8 +642,57 @@ def page_chat():
                     unsafe_allow_html=True
                 )
 
-    # Check if we need to get AI response / ตรวจสอบว่าต้องรับคำตอบจาก AI หรือไม่
-    if 'waiting_for_ai' in st.session_state and st.session_state.waiting_for_ai:
+    # Chat input / ช่องพิมพ์ข้อความ (render first to prevent disappearing)
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Check if waiting for AI response / ตรวจสอบว่ากำลังรอ AI หรือไม่
+    is_waiting = 'waiting_for_ai' in st.session_state and st.session_state.waiting_for_ai
+
+    # Use a form for better UX / ใช้ฟอร์มเพื่อ UX ที่ดีขึ้น
+    with st.form(key="chat_form", clear_on_submit=True):
+        user_input = st.text_input(
+            "Your message / ข้อความของคุณ:",
+            placeholder="Type your question or response here..." if not is_waiting else "Please wait for patient response...",
+            label_visibility="collapsed",
+            key="chat_input",
+            disabled=is_waiting  # Disable while waiting for AI
+        )
+
+        # Add JavaScript to auto-focus the input / เพิ่ม JavaScript เพื่อให้ cursor ปรากฏอัตโนมัติ
+        st.markdown("""
+            <script>
+            // Auto-focus on chat input after page load
+            setTimeout(function() {
+                const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+                if (inputs.length > 0) {
+                    inputs[inputs.length - 1].focus();
+                }
+            }, 100);
+            </script>
+        """, unsafe_allow_html=True)
+
+        submit_button = st.form_submit_button(
+            "Send 📤" if not is_waiting else "⏳ Waiting...",
+            use_container_width=True,
+            disabled=is_waiting
+        )
+
+    # Process user input / ประมวลผลข้อความ
+    if submit_button and user_input and not is_waiting:
+        if st.session_state.timer_active:
+            # Add user message to history immediately / เพิ่มข้อความผู้ใช้ในประวัติทันที
+            st.session_state.chat_history.append({
+                "role": "user",
+                "content": user_input
+            })
+            # Set flag to get AI response on next render / ตั้งค่าเพื่อรับคำตอบ AI ในรอบถัดไป
+            st.session_state.waiting_for_ai = True
+            st.rerun()
+        else:
+            st.warning("⏰ Time's up! Please end the case.")
+
+    # Check if we need to get AI response (after form is rendered) / ตรวจสอบว่าต้องรับคำตอบจาก AI หรือไม่
+    if is_waiting:
         with st.spinner("Patient is responding... / ผู้ป่วยกำลังตอบ..."):
             ai_response = get_ai_response(
                 st.session_state.chat_history,
@@ -656,33 +706,6 @@ def page_chat():
         })
         st.session_state.waiting_for_ai = False
         st.rerun()
-
-    # Chat input / ช่องพิมพ์ข้อความ
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Use a form for better UX / ใช้ฟอร์มเพื่อ UX ที่ดีขึ้น
-    with st.form(key="chat_form", clear_on_submit=True):
-        user_input = st.text_input(
-            "Your message / ข้อความของคุณ:",
-            placeholder="Type your question or response here...",
-            label_visibility="collapsed",
-            key="chat_input"
-        )
-        submit_button = st.form_submit_button("Send 📤", use_container_width=True)
-
-    # Process user input / ประมวลผลข้อความ
-    if submit_button and user_input:
-        if st.session_state.timer_active:
-            # Add user message to history immediately / เพิ่มข้อความผู้ใช้ในประวัติทันที
-            st.session_state.chat_history.append({
-                "role": "user",
-                "content": user_input
-            })
-            # Set flag to get AI response on next render / ตั้งค่าเพื่อรับคำตอบ AI ในรอบถัดไป
-            st.session_state.waiting_for_ai = True
-            st.rerun()
-        else:
-            st.warning("⏰ Time's up! Please end the case.")
 
     # Auto-refresh for timer / รีเฟรชอัตโนมัติสำหรับตัวจับเวลา
     if st.session_state.timer_active and remaining_seconds > 0:
