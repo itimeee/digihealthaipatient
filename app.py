@@ -24,9 +24,9 @@ SYSTEM_PROMPT = """You are a patient in a psychiatric clinic. Answer questions n
 # Timer Duration (in minutes) / ระยะเวลาจับเวลา (นาที)
 TIMER_DURATION_MINUTES = 30
 
-# Google Drive Folder ID for saving sheets / โฟลเดอร์ Google Drive สำหรับบันทึกไฟล์
-# Get folder ID from the folder URL: https://drive.google.com/drive/folders/[FOLDER_ID]
-GOOGLE_DRIVE_FOLDER_ID = "1hwOcudwxLXG31XY9yVO1bM003mNchBJq"
+# Google Sheet ID for logging session data / ID ของ Google Sheet สำหรับบันทึกข้อมูล
+# Get sheet ID from the URL: https://docs.google.com/spreadsheets/d/[SHEET_ID]/edit
+GOOGLE_SHEET_ID = "1motfqsOspQrVkWDtRqUxgfH_-3nDuqYGw9eXwEfQWoo"
 
 # ============================================================================
 # GOOGLE SHEETS SETUP / ตั้งค่า Google Sheets
@@ -59,10 +59,10 @@ def get_google_credentials():
         return None
 
 
-def create_new_sheet(user_name, user_email, chat_history):
+def save_session_to_sheet(user_name, user_email, chat_history):
     """
-    Create a NEW Google Sheet and save session data
-    สร้าง Google Sheet ใหม่และบันทึกข้อมูลการฝึกซ้อม
+    Append session data to existing Google Sheet
+    เพิ่มข้อมูลเซสชันลงใน Google Sheet ที่มีอยู่
 
     Args:
         user_name: Name of the user / ชื่อผู้ใช้
@@ -78,42 +78,57 @@ def create_new_sheet(user_name, user_email, chat_history):
         # Connect to Google Sheets / เชื่อมต่อ Google Sheets
         gc = gspread.authorize(credentials)
 
-        # Create filename with timestamp / สร้างชื่อไฟล์พร้อมเวลา
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        sheet_name = f"DigiHealth_{user_name.replace(' ', '_')}_{timestamp}"
-
-        # Create new spreadsheet in specified folder / สร้างสเปรดชีทใหม่ในโฟลเดอร์ที่กำหนด
-        spreadsheet = gc.create(sheet_name, folder_id=GOOGLE_DRIVE_FOLDER_ID)
+        # Open the existing spreadsheet / เปิดสเปรดชีทที่มีอยู่
+        spreadsheet = gc.open_by_key(GOOGLE_SHEET_ID)
         worksheet = spreadsheet.sheet1
 
-        # Prepare header row / เตรียมหัวตาราง
-        headers = ["Timestamp", "User Name", "User Email", "Speaker", "Message"]
-        worksheet.append_row(headers)
-
-        # Add session info row / เพิ่มข้อมูลเซสชัน
+        # Get current timestamp / รับเวลาปัจจุบัน
         session_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Check if sheet has headers, if not add them / ตรวจสอบว่ามี header หรือยัง
+        existing_data = worksheet.get_all_values()
+        if not existing_data or existing_data[0][0] != "Session ID":
+            # Add headers if sheet is empty / เพิ่ม header ถ้าชีทว่าง
+            headers = ["Session ID", "Timestamp", "User Name", "User Email", "Speaker", "Message"]
+            worksheet.insert_row(headers, 1)
+
+        # Prepare rows to append / เตรียมแถวที่จะเพิ่ม
+        rows_to_add = []
+
+        # Add session separator row / เพิ่มแถวแบ่งเซสชัน
+        separator = [f"=== SESSION START: {session_id} ===", session_time, user_name, user_email, "", ""]
+        rows_to_add.append(separator)
 
         # Add all chat messages / เพิ่มข้อความสนทนาทั้งหมด
         for message in chat_history:
             row = [
+                session_id,
                 session_time,
                 user_name,
                 user_email,
                 message["role"],
                 message["content"]
             ]
-            worksheet.append_row(row)
+            rows_to_add.append(row)
 
-        # Make the spreadsheet shareable / ทำให้สเปรดชีทแชร์ได้
-        spreadsheet.share('', perm_type='anyone', role='reader')
+        # Add session end separator / เพิ่มแถวปิดเซสชัน
+        end_separator = [f"=== SESSION END: {session_id} ===", session_time, user_name, user_email, "", f"Total messages: {len(chat_history)}"]
+        rows_to_add.append(end_separator)
 
-        # Save the URL in session state / บันทึก URL ใน session state
+        # Add empty row for spacing / เพิ่มแถวว่างเพื่อเว้นระยะ
+        rows_to_add.append(["", "", "", "", "", ""])
+
+        # Append all rows at once (more efficient) / เพิ่มทุกแถวพร้อมกัน (เร็วกว่า)
+        worksheet.append_rows(rows_to_add)
+
+        # Save the sheet URL in session state / บันทึก URL ใน session state
         st.session_state.sheet_url = spreadsheet.url
 
         return True
 
     except Exception as e:
-        st.error(f"Error creating Google Sheet: {e}")
+        st.error(f"Error saving to Google Sheet: {e}")
         return False
 
 
@@ -588,7 +603,7 @@ def page_end():
     if st.session_state.sheet_url is None:
         if st.button("💾 Save Session Data", type="primary", use_container_width=True):
             with st.spinner("Saving data to Google Sheets... / กำลังบันทึกข้อมูล..."):
-                success = create_new_sheet(
+                success = save_session_to_sheet(
                     st.session_state.user_name,
                     st.session_state.user_email,
                     st.session_state.chat_history
