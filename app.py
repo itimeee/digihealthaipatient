@@ -372,12 +372,13 @@ def page_pre_brief():
 
     with col2:
         if st.button("💬 Text Mode", use_container_width=True, type="primary"):
-            # Initialize Gemini / เริ่มต้น Gemini
-            if initialize_gemini():
-                st.session_state.page = 'chat'
-                st.session_state.start_time = datetime.now()
-                st.session_state.timer_active = True
-                st.rerun()
+            # Initialize Gemini (will show error in chat if fails) / เริ่มต้น Gemini
+            initialize_gemini()
+            # Proceed to chat page regardless / ไปหน้าแชทต่อไปไม่ว่าจะเป็นอย่างไร
+            st.session_state.page = 'chat'
+            st.session_state.start_time = datetime.now()
+            st.session_state.timer_active = True
+            st.rerun()
 
     # Back button / ปุ่มย้อนกลับ
     st.markdown("<br>", unsafe_allow_html=True)
@@ -670,6 +671,7 @@ def main():
             background-color: white !important;
             padding: 12px !important;
             transition: border-color 0.3s ease !important;
+            color: #2c3e50 !important;
         }
 
         .stTextInput>div>div>input:focus {
@@ -677,11 +679,22 @@ def main():
             box-shadow: 0 0 0 3px rgba(74, 144, 164, 0.1) !important;
         }
 
+        /* Text input labels */
+        .stTextInput>label {
+            color: #2c5f7d !important;
+            font-weight: 500 !important;
+        }
+
         /* Info boxes - Calming blue */
         .stAlert {
             border-radius: 12px !important;
             border-left: 4px solid #4a90a4 !important;
             background-color: #f0f8fb !important;
+            color: #2c3e50 !important;
+        }
+
+        .stAlert p, .stAlert div, .stAlert span {
+            color: #2c3e50 !important;
         }
 
         /* Success messages */
