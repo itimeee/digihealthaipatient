@@ -369,16 +369,37 @@ def page_pre_brief():
     # Mode selection / เลือกโหมด
     st.subheader("Select Interview Mode / เลือกโหมดการสัมภาษณ์")
 
-    col1, col2 = st.columns(2)
+    # Initialize selected mode in session state / เริ่มต้นโหมดที่เลือกใน session state
+    if 'selected_mode' not in st.session_state:
+        st.session_state.selected_mode = 'Text Mode'
 
-    with col1:
-        st.button("🎤 Voice Mode (Coming Soon)", use_container_width=True, disabled=True)
+    # Radio button for mode selection / ปุ่มเลือกโหมด
+    mode = st.radio(
+        "Choose your preferred mode:",
+        options=['💬 Text Mode', '🎤 Voice Mode (Coming Soon)'],
+        index=0,
+        horizontal=True,
+        disabled=False,
+        key='mode_selector'
+    )
 
+    # Store selected mode / บันทึกโหมดที่เลือก
+    st.session_state.selected_mode = mode
+
+    # Show info about selected mode / แสดงข้อมูลเกี่ยวกับโหมดที่เลือก
+    if 'Voice Mode' in mode:
+        st.info("🎤 Voice Mode will be available in a future update. Please select Text Mode to continue.")
+    else:
+        st.success("✅ Text Mode selected. Click 'Start Case' when you're ready to begin.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Start Case button / ปุ่มเริ่มเคส
+    col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        if st.button("💬 Text Mode", use_container_width=True, type="primary"):
-            # Initialize Gemini (will show error in chat if fails) / เริ่มต้น Gemini
-            initialize_gemini()
-            # Proceed to chat page regardless / ไปหน้าแชทต่อไปไม่ว่าจะเป็นอย่างไร
+        if st.button("▶️ Start Case", use_container_width=True, type="primary",
+                    disabled=('Voice Mode' in st.session_state.selected_mode)):
+            # Navigate to chat page / ไปหน้าแชท
             st.session_state.page = 'chat'
             st.session_state.start_time = datetime.now()
             st.session_state.timer_active = True
@@ -410,6 +431,11 @@ def page_chat():
     Main chat interface with timer
     หน้าสนทนากับ AI พร้อมตัวจับเวลา
     """
+    # Initialize Gemini AI once when entering chat page / เริ่มต้น Gemini AI ครั้งเดียวเมื่อเข้าหน้าแชท
+    if 'gemini_initialized' not in st.session_state:
+        initialize_gemini()
+        st.session_state.gemini_initialized = True
+
     st.title("Interview Simulation / การฝึกซ้อมสัมภาษณ์")
 
     # ========================================================================
