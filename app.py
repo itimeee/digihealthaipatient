@@ -331,10 +331,6 @@ def initialize_session_state():
     if 'sheet_url' not in st.session_state:
         st.session_state.sheet_url = None
 
-    # [เพิ่มใหม่] ตัวแปรกันหน้าเว็บค้างตอนเริ่ม
-    if 'just_entered_chat' not in st.session_state:
-        st.session_state.just_entered_chat = False
-
 
 # ============================================================================
 # PAGE 1: HOMEPAGE / LOGIN
@@ -572,8 +568,6 @@ def page_pre_brief():
             st.session_state.page = 'chat'
             st.session_state.start_time = datetime.now()
             st.session_state.timer_active = True
-            st.session_state.just_entered_chat = True
-                        
             st.rerun()
 
     # Back button / ปุ่มย้อนกลับ
@@ -757,18 +751,10 @@ def page_chat():
         st.session_state.waiting_for_ai = False
         st.rerun()
 
-    # ========================================================================
-    # TIMER LOOP (FIXED) / แก้ไขปุ่มค้าง
-    # ========================================================================
+    # Auto-refresh for timer / รีเฟรชอัตโนมัติสำหรับตัวจับเวลา
     if st.session_state.timer_active and remaining_seconds > 0:
-        # ถ้าเพิ่งเข้ามาครั้งแรก ให้ข้าม sleep แล้ว rerun ทันทีเพื่อให้ UI โหลดก่อน
-        if st.session_state.get('just_entered_chat', False):
-            st.session_state.just_entered_chat = False
-            st.rerun()
-        else:
-            # รอบถัดๆ ไปค่อยหน่วงเวลา
-            time.sleep(1)
-            st.rerun()
+        time.sleep(1)
+        st.rerun()
 
 
 # ============================================================================
