@@ -536,8 +536,8 @@ def page_pre_brief():
     mode = st.radio(
         "Choose your preferred mode:",
         options=[
-            '💬 **Text Mode** - Type your questions and responses',
-            '🎤 **Voice Mode** - Speak with the AI patient (Coming Soon)'
+            'Text 💬 **Text Mode** - Type your questions and responses',
+            'Voice 🎤 **Voice Mode** - Speak with the AI patient (Coming Soon)'
         ],
         index=0,
         horizontal=False,
