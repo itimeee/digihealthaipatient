@@ -16,7 +16,7 @@ import time
 # You can easily change these values / คุณสามารถแก้ไขค่าเหล่านี้ได้ง่าย ๆ
 
 # Gemini Model Name / ชื่อโมเดล AI
-MODEL_NAME = "gemini-2.0-flash-exp"
+MODEL_NAME = "gemini-2.5-flash"
 
 # System Prompt for AI Patient / คำสั่งสำหรับ AI แสดงบทบาทผู้ป่วย
 SYSTEM_PROMPT = """You are a patient in a psychiatric clinic. Answer questions naturally and realistically based on the case information provided. Stay in character throughout the conversation. Respond in a conversational manner as a real patient would."""
