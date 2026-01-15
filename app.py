@@ -213,17 +213,13 @@ def page_login():
     # Center the title with medical styling / จัดหัวข้อกลางพร้อมสไตล์ทางการแพทย์
     st.markdown("""
         <div style='text-align: center; padding: 30px 0;'>
-            <div style='background: linear-gradient(135deg, #4a90a4 0%, #5ba3b8 100%);
-                        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-                        background-clip: text;'>
-                <h1 style='font-size: 3.5em; font-weight: 700; margin: 0; padding: 0;'>
-                    🏥 DigiHealth AI Patient
-                </h1>
-            </div>
-            <p style='color: #5a7a8a; font-size: 1.3em; margin-top: 10px; font-weight: 400;'>
+            <h1 style='color: #2c5f7d; font-size: 3.5em; font-weight: 700; margin: 0;'>
+                🏥 DigiHealth AI Patient
+            </h1>
+            <p style='color: #4a90a4; font-size: 1.3em; margin-top: 10px; font-weight: 400;'>
                 Psychiatric Training Simulator
             </p>
-            <p style='color: #7a9aa8; font-size: 0.95em; margin-top: 5px;'>
+            <p style='color: #5a7a8a; font-size: 0.95em; margin-top: 5px;'>
                 Advanced Clinical Skills Development Platform
             </p>
         </div>
@@ -236,14 +232,6 @@ def page_login():
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
-        # Card container for inputs / กล่องสำหรับฟอร์ม
-        st.markdown("""
-            <div style='background: white; padding: 35px; border-radius: 20px;
-                        box-shadow: 0 8px 24px rgba(74, 144, 164, 0.12);
-                        border: 1px solid #e3f2fd;'>
-            </div>
-        """, unsafe_allow_html=True)
-
         # Input fields / ช่องกรอกข้อมูล
         name = st.text_input("👤 Name / ชื่อ", value=st.session_state.user_name,
                             placeholder="Enter your full name")
@@ -285,7 +273,7 @@ def page_case_selection():
         st.markdown("""
             <div style='background: white; padding: 25px; border-radius: 16px;
                         border: 2px solid #4a90a4; box-shadow: 0 4px 12px rgba(74, 144, 164, 0.15);'>
-                <h3 style='color: #2c5f7d; margin-top: 0;'>🧠 Case A: Depression</h3>
+                <h3 style='color: #2c5f7d; margin-top: 0;'>📋 Case A</h3>
                 <p style='color: #5a7a8a; margin-bottom: 0;'>✅ Active case for practice</p>
             </div>
         """, unsafe_allow_html=True)
@@ -299,7 +287,7 @@ def page_case_selection():
         st.markdown("""
             <div style='background: #f8f9fa; padding: 25px; border-radius: 16px;
                         border: 2px solid #e0e0e0; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);'>
-                <h3 style='color: #9e9e9e; margin-top: 0;'>😰 Case B: Anxiety</h3>
+                <h3 style='color: #9e9e9e; margin-top: 0;'>📋 Case B</h3>
                 <p style='color: #9e9e9e; margin-bottom: 0;'>🔒 Coming Soon</p>
             </div>
         """, unsafe_allow_html=True)
@@ -310,7 +298,7 @@ def page_case_selection():
         st.markdown("""
             <div style='background: #f8f9fa; padding: 25px; border-radius: 16px;
                         border: 2px solid #e0e0e0; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);'>
-                <h3 style='color: #9e9e9e; margin-top: 0;'>🌀 Case C: Psychosis</h3>
+                <h3 style='color: #9e9e9e; margin-top: 0;'>📋 Case C</h3>
                 <p style='color: #9e9e9e; margin-bottom: 0;'>🔒 Coming Soon</p>
             </div>
         """, unsafe_allow_html=True)
