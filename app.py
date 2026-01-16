@@ -795,33 +795,45 @@ def page_chat():
     if st.session_state.timer_active:
         # Use st.chat_input for a pinned chat bar at the bottom
         # ใช้ st.chat_input เพื่อสร้างแถบแชทที่ปักหมุดไว้ด้านล่าง
-        user_input = st.chat_input(
+        if prompt := st.chat_input(
             placeholder="Type your question or response here...",
             key="chat_input"
-        )
-
-        # Process user input when entered / ประมวลผลข้อความเมื่อผู้ใช้กด Enter
-        if user_input:
-            # Add user message to history / เพิ่มข้อความผู้ใช้ในประวัติ
+        ):
+            # 1. Append user message to history immediately
+            # เพิ่มข้อความผู้ใช้ในประวัติทันที
             st.session_state.chat_history.append({
                 "role": "user",
-                "content": user_input
+                "content": prompt
             })
 
-            # Get AI response / รับคำตอบจาก AI
+            # 2. IMMEDIATELY render the user's message bubble (before rerun)
+            # แสดงข้อความผู้ใช้ทันที (ก่อน rerun)
+            st.markdown(
+                f"<div style='text-align: right; background: linear-gradient(135deg, #4a90a4 0%, #5ba3b8 100%); "
+                f"color: white; padding: 12px 16px; border-radius: 18px 18px 4px 18px; "
+                f"margin: 8px 0; box-shadow: 0 2px 4px rgba(74, 144, 164, 0.2); max-width: 80%; "
+                f"margin-left: auto;'>"
+                f"<b style='color: #e3f2fd;'>You:</b> {prompt}</div>",
+                unsafe_allow_html=True
+            )
+
+            # 3. Show spinner and get AI response
+            # แสดง spinner และรับคำตอบจาก AI
             with st.spinner("Patient is responding... / ผู้ป่วยกำลังตอบ..."):
                 ai_response = get_ai_response(
                     st.session_state.chat_history,
                     st.session_state.case_context
                 )
 
-            # Add AI response to history / เพิ่มคำตอบ AI ในประวัติ
+            # 4. Append AI response to history
+            # เพิ่มคำตอบ AI ในประวัติ
             st.session_state.chat_history.append({
                 "role": "assistant",
                 "content": ai_response
             })
 
-            # Rerun to update the UI / รีรันเพื่ออัพเดท UI
+            # 5. Rerun to refresh the full view
+            # รีรันเพื่อรีเฟรชทั้งหมด
             st.rerun()
     else:
         # Timer ended, disable input / หมดเวลาแล้ว ปิดการพิมพ์
