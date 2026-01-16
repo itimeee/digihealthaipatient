@@ -233,26 +233,46 @@ def get_latest_session_data():
 # ============================================================================
 
 @st.cache_resource
-def get_gemini_model(model_name=None):
+def configure_gemini_api():
     """
-    Initialize and cache Gemini model
-    เริ่มต้นและแคช Gemini model (ใช้ครั้งเดียว)
+    Configure Gemini API with API key (cached, runs once)
+    ตั้งค่า API key สำหรับ Gemini (แคชไว้ ใช้ครั้งเดียว)
 
-    Args:
-        model_name: Name of the model to use (optional, defaults to MODEL_NAME)
-
-    Using cache_resource ensures this only runs once and doesn't block page rendering
+    Returns:
+        bool: True if configuration successful, False otherwise
     """
     try:
         api_key = st.secrets["GEMINI_API_KEY"]
         genai.configure(api_key=api_key)
+        return True
+    except Exception as e:
+        st.error(f"Error configuring Gemini API: {e}")
+        st.error("Please add your GEMINI_API_KEY to secrets.toml")
+        return False
+
+
+def get_gemini_model(model_name=None):
+    """
+    Get Gemini model instance (creates new instance each time)
+    สร้าง Gemini model (สร้างใหม่ทุกครั้ง)
+
+    Args:
+        model_name: Name of the model to use (optional, defaults to MODEL_NAME)
+
+    Returns:
+        GenerativeModel instance or None if configuration fails
+    """
+    # Configure API if not already done (cached call)
+    if not configure_gemini_api():
+        return None
+
+    try:
         # Use provided model_name or fall back to default
         selected_model = model_name if model_name else MODEL_NAME
         model = genai.GenerativeModel(selected_model)
         return model
     except Exception as e:
-        st.error(f"Error initializing Gemini: {e}")
-        st.error("Please add your GEMINI_API_KEY to secrets.toml")
+        st.error(f"Error creating Gemini model '{model_name}': {e}")
         return None
 
 
@@ -868,6 +888,23 @@ def main():
         h1, h2, h3 {
             color: #2c5f7d !important;
             font-weight: 600 !important;
+        }
+
+        /* Hide header anchor links and hover effects */
+        h1:hover, h2:hover, h3:hover {
+            background-color: transparent !important;
+        }
+
+        /* Hide the anchor link icon */
+        .stMarkdown h1 a, .stMarkdown h2 a, .stMarkdown h3 a {
+            display: none !important;
+        }
+
+        /* Remove header hover background */
+        [data-testid="stMarkdownContainer"] h1:hover,
+        [data-testid="stMarkdownContainer"] h2:hover,
+        [data-testid="stMarkdownContainer"] h3:hover {
+            background-color: transparent !important;
         }
 
         /* Primary buttons - Medical blue */
