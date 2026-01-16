@@ -689,6 +689,13 @@ def page_chat():
     Main chat interface with timer
     หน้าสนทนากับ AI พร้อมตัวจับเวลา
     """
+    # Scroll to top when page loads / เลื่อนหน้าขึ้นด้านบนเมื่อโหลด
+    st.markdown("""
+        <script>
+        window.parent.document.querySelector('section.main').scrollTo(0, 0);
+        </script>
+    """, unsafe_allow_html=True)
+
     st.title("Interview Simulation / การฝึกซ้อมสัมภาษณ์")
 
     # ========================================================================
@@ -799,25 +806,54 @@ def page_chat():
         # Add JavaScript to auto-focus the input / เพิ่ม JavaScript เพื่อให้ cursor ปรากฏอัตโนมัติ
         st.markdown("""
             <script>
-            // Auto-focus on chat input after page load and after form submit
-            // Focus กลับมาที่ textbox หลังจากกด Send
-            function focusChatInput() {
-                const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-                if (inputs.length > 0) {
-                    // Focus the last text input (chat input)
-                    const chatInput = inputs[inputs.length - 1];
-                    chatInput.focus();
-                    // Move cursor to end of text
-                    chatInput.setSelectionRange(chatInput.value.length, chatInput.value.length);
+            // Auto-focus on chat input continuously
+            // Focus กลับมาที่ textbox อัตโนมัติต่อเนื่อง
+            (function() {
+                let focusAttempts = 0;
+                const maxAttempts = 20; // Try for 2 seconds (20 * 100ms)
+
+                function focusChatInput() {
+                    const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+                    if (inputs.length > 0) {
+                        // Focus the last text input (chat input)
+                        const chatInput = inputs[inputs.length - 1];
+                        if (document.activeElement !== chatInput) {
+                            chatInput.focus();
+                            // Move cursor to end of text
+                            const len = chatInput.value.length;
+                            chatInput.setSelectionRange(len, len);
+                        }
+                    }
+
+                    focusAttempts++;
+                    if (focusAttempts < maxAttempts) {
+                        setTimeout(focusChatInput, 100);
+                    }
                 }
-            }
 
-            // Focus immediately after load
-            setTimeout(focusChatInput, 100);
+                // Start focusing immediately
+                focusChatInput();
 
-            // Focus again after a short delay (catches post-submit rerun)
-            setTimeout(focusChatInput, 300);
-            setTimeout(focusChatInput, 500);
+                // Also set up a persistent interval for continuous focus
+                const focusInterval = setInterval(function() {
+                    const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+                    if (inputs.length > 0) {
+                        const chatInput = inputs[inputs.length - 1];
+                        // Only focus if no element is currently focused or if something else took focus
+                        const activeEl = window.parent.document.activeElement;
+                        if (!activeEl || activeEl.tagName === 'BODY' || activeEl === chatInput) {
+                            chatInput.focus();
+                            const len = chatInput.value.length;
+                            chatInput.setSelectionRange(len, len);
+                        }
+                    }
+                }, 200);
+
+                // Clear interval after 3 seconds to avoid performance issues
+                setTimeout(function() {
+                    clearInterval(focusInterval);
+                }, 3000);
+            })();
             </script>
         """, unsafe_allow_html=True)
 
