@@ -689,10 +689,28 @@ def page_chat():
     Main chat interface with timer
     หน้าสนทนากับ AI พร้อมตัวจับเวลา
     """
-    # Scroll to top when page loads / เลื่อนหน้าขึ้นด้านบนเมื่อโหลด
+    # Aggressive scroll to top / เลื่อนหน้าขึ้นด้านบนแบบแน่นหนา
     st.markdown("""
         <script>
-        window.parent.document.querySelector('section.main').scrollTo(0, 0);
+        (function() {
+            function scrollToTop() {
+                const mainSection = window.parent.document.querySelector('section.main');
+                if (mainSection) {
+                    mainSection.scrollTop = 0;
+                    mainSection.scrollTo(0, 0);
+                }
+                window.parent.scrollTo(0, 0);
+            }
+
+            // Scroll immediately multiple times
+            for (let i = 0; i < 20; i++) {
+                setTimeout(scrollToTop, i * 50);
+            }
+
+            // Keep scrolling to top for 2 seconds
+            const scrollInterval = setInterval(scrollToTop, 100);
+            setTimeout(() => clearInterval(scrollInterval), 2000);
+        })();
         </script>
     """, unsafe_allow_html=True)
 
@@ -806,53 +824,47 @@ def page_chat():
         # Add JavaScript to auto-focus the input / เพิ่ม JavaScript เพื่อให้ cursor ปรากฏอัตโนมัติ
         st.markdown("""
             <script>
-            // Auto-focus on chat input continuously
-            // Focus กลับมาที่ textbox อัตโนมัติต่อเนื่อง
+            // Aggressive auto-focus with MutationObserver
+            // Focus textbox อัตโนมัติแบบแน่นหนา
             (function() {
-                let focusAttempts = 0;
-                const maxAttempts = 20; // Try for 2 seconds (20 * 100ms)
-
                 function focusChatInput() {
                     const inputs = window.parent.document.querySelectorAll('input[type="text"]');
                     if (inputs.length > 0) {
-                        // Focus the last text input (chat input)
                         const chatInput = inputs[inputs.length - 1];
-                        if (document.activeElement !== chatInput) {
-                            chatInput.focus();
-                            // Move cursor to end of text
-                            const len = chatInput.value.length;
-                            chatInput.setSelectionRange(len, len);
-                        }
-                    }
-
-                    focusAttempts++;
-                    if (focusAttempts < maxAttempts) {
-                        setTimeout(focusChatInput, 100);
+                        chatInput.focus();
+                        const len = chatInput.value.length;
+                        chatInput.setSelectionRange(len, len);
                     }
                 }
 
-                // Start focusing immediately
-                focusChatInput();
+                // Initial focus attempts
+                for (let i = 0; i < 30; i++) {
+                    setTimeout(focusChatInput, i * 100);
+                }
 
-                // Also set up a persistent interval for continuous focus
-                const focusInterval = setInterval(function() {
-                    const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-                    if (inputs.length > 0) {
-                        const chatInput = inputs[inputs.length - 1];
-                        // Only focus if no element is currently focused or if something else took focus
-                        const activeEl = window.parent.document.activeElement;
-                        if (!activeEl || activeEl.tagName === 'BODY' || activeEl === chatInput) {
-                            chatInput.focus();
-                            const len = chatInput.value.length;
-                            chatInput.setSelectionRange(len, len);
-                        }
+                // Continuous focus every 150ms for 5 seconds
+                const focusInterval = setInterval(focusChatInput, 150);
+                setTimeout(() => clearInterval(focusInterval), 5000);
+
+                // Watch for DOM changes and refocus
+                const observer = new MutationObserver(function() {
+                    setTimeout(focusChatInput, 50);
+                });
+
+                observer.observe(window.parent.document.body, {
+                    childList: true,
+                    subtree: true
+                });
+
+                // Stop observing after 5 seconds
+                setTimeout(() => observer.disconnect(), 5000);
+
+                // Focus on any click that doesn't target a button or link
+                window.parent.document.addEventListener('click', function(e) {
+                    if (!e.target.matches('button, a, [role="button"]')) {
+                        setTimeout(focusChatInput, 10);
                     }
-                }, 200);
-
-                // Clear interval after 3 seconds to avoid performance issues
-                setTimeout(function() {
-                    clearInterval(focusInterval);
-                }, 3000);
+                });
             })();
             </script>
         """, unsafe_allow_html=True)
