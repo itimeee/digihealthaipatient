@@ -18,6 +18,9 @@ from cases import ALL_CASES, get_case_by_name, get_active_cases, get_inactive_ca
 # ============================================================================
 # You can easily change these values / คุณสามารถแก้ไขค่าเหล่านี้ได้ง่าย ๆ
 
+# Debug Mode - Set to True to see rerun tracking / ตั้งค่า True เพื่อเปิดโหมด debug
+DEBUG_MODE = True
+
 # Gemini Model Name / ชื่อโมเดล AI
 MODEL_NAME = "gemini-2.5-flash"
 
@@ -514,6 +517,36 @@ def page_pre_brief():
     Pre-brief page with case information
     หน้าแสดงข้อมูลเคสก่อนเริ่มฝึกซ้อม
     """
+    # DEBUG: Track page renders / ติดตามจำนวนครั้งที่หน้า render
+    if DEBUG_MODE:
+        if 'pre_brief_render_count' not in st.session_state:
+            st.session_state.pre_brief_render_count = 0
+            st.session_state.pre_brief_last_render = datetime.now()
+
+        st.session_state.pre_brief_render_count += 1
+        current_time = datetime.now()
+        time_diff = (current_time - st.session_state.pre_brief_last_render).total_seconds()
+        st.session_state.pre_brief_last_render = current_time
+
+        # Show debug info / แสดงข้อมูล debug
+        st.sidebar.markdown("### 🐛 DEBUG MODE")
+        st.sidebar.markdown(f"**Page:** pre_brief")
+        st.sidebar.markdown(f"**Render count:** {st.session_state.pre_brief_render_count}")
+        st.sidebar.markdown(f"**Time since last render:** {time_diff:.3f}s")
+
+        # Warning if rendering too frequently / เตือนถ้า render บ่อยเกินไป
+        if time_diff < 0.5 and st.session_state.pre_brief_render_count > 2:
+            st.sidebar.error(f"⚠️ RERUN LOOP DETECTED! Rendering every {time_diff:.3f}s")
+
+        # Show relevant session state / แสดง session state ที่เกี่ยวข้อง
+        st.sidebar.markdown("**Session State:**")
+        st.sidebar.json({
+            "selected_case": st.session_state.get('selected_case'),
+            "current_case_name": st.session_state.get('current_case_name'),
+            "has_case_context": 'case_context' in st.session_state,
+            "mode_selector": st.session_state.get('mode_selector'),
+        })
+
     # Load selected case configuration / โหลดการตั้งค่าเคสที่เลือก
     selected_case_name = st.session_state.get('selected_case', 'Case A')
     case_config = get_case_by_name(selected_case_name)
@@ -531,12 +564,22 @@ def page_pre_brief():
 
     # Store case configuration in session state ONLY if not already set or if case changed
     # บันทึกการตั้งค่าเคสใน session state เฉพาะครั้งแรกหรือเมื่อเปลี่ยนเคส
-    if ('case_context' not in st.session_state or
-        st.session_state.get('current_case_name') != case_config.CASE_NAME):
+    should_update = ('case_context' not in st.session_state or
+                     st.session_state.get('current_case_name') != case_config.CASE_NAME)
+
+    if DEBUG_MODE:
+        st.sidebar.markdown(f"**Should update state:** {should_update}")
+        if should_update:
+            st.sidebar.success("✅ Updating session state (first load or case changed)")
+
+    if should_update:
         st.session_state.case_context = case_config.CASE_INFORMATION
         st.session_state.case_system_prompt = case_config.SYSTEM_PROMPT
         st.session_state.case_model = case_config.MODEL_NAME
         st.session_state.current_case_name = case_config.CASE_NAME
+
+        if DEBUG_MODE:
+            st.sidebar.markdown("**State updated at:** " + datetime.now().strftime("%H:%M:%S.%f")[:12])
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -546,6 +589,11 @@ def page_pre_brief():
     # Radio button for mode selection / ปุ่มเลือกโหมด
     # Note: Using key= means Streamlit manages the state automatically
     # หมายเหตุ: การใช้ key= ทำให้ Streamlit จัดการ state อัตโนมัติ
+
+    if DEBUG_MODE:
+        st.sidebar.markdown("**Before radio button:**")
+        st.sidebar.markdown(f"mode_selector = {st.session_state.get('mode_selector', 'NOT SET')}")
+
     mode = st.radio(
         "Choose your preferred mode:",
         options=[
@@ -558,6 +606,11 @@ def page_pre_brief():
         key='mode_selector',
         help="Select how you want to interact with the AI patient"
     )
+
+    if DEBUG_MODE:
+        st.sidebar.markdown("**After radio button:**")
+        st.sidebar.markdown(f"mode = {mode}")
+        st.sidebar.markdown(f"mode_selector = {st.session_state.get('mode_selector', 'NOT SET')}")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -606,6 +659,25 @@ def page_chat():
     Main chat interface with timer
     หน้าสนทนากับ AI พร้อมตัวจับเวลา
     """
+    # DEBUG: Track page renders / ติดตามจำนวนครั้งที่หน้า render
+    if DEBUG_MODE:
+        if 'chat_render_count' not in st.session_state:
+            st.session_state.chat_render_count = 0
+            st.session_state.chat_last_render = datetime.now()
+
+        st.session_state.chat_render_count += 1
+        current_time = datetime.now()
+        time_diff = (current_time - st.session_state.chat_last_render).total_seconds()
+        st.session_state.chat_last_render = current_time
+
+        # Show debug info / แสดงข้อมูล debug
+        st.sidebar.markdown("### 🐛 DEBUG MODE")
+        st.sidebar.markdown(f"**Page:** chat")
+        st.sidebar.markdown(f"**Render count:** {st.session_state.chat_render_count}")
+        st.sidebar.markdown(f"**Time since last render:** {time_diff:.3f}s")
+        st.sidebar.markdown(f"**Timer active:** {st.session_state.timer_active}")
+        st.sidebar.markdown(f"**Waiting for AI:** {st.session_state.get('waiting_for_ai', False)}")
+
     st.title("Interview Simulation / การฝึกซ้อมสัมภาษณ์")
 
     # ========================================================================
