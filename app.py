@@ -684,42 +684,12 @@ def format_time(seconds):
     return f"{minutes:02d}:{secs:02d}"
 
 
-def page_chat():
+@st.fragment(run_every=1)
+def display_timer():
     """
-    Main chat interface with timer
-    หน้าสนทนากับ AI พร้อมตัวจับเวลา
+    Timer fragment that updates independently without reloading the page
+    ส่วนแสดงตัวจับเวลาที่อัพเดทอิสระโดยไม่โหลดหน้าใหม่
     """
-    # Aggressive scroll to top / เลื่อนหน้าขึ้นด้านบนแบบแน่นหนา
-    st.markdown("""
-        <script>
-        (function() {
-            function scrollToTop() {
-                const mainSection = window.parent.document.querySelector('section.main');
-                if (mainSection) {
-                    mainSection.scrollTop = 0;
-                    mainSection.scrollTo(0, 0);
-                }
-                window.parent.scrollTo(0, 0);
-            }
-
-            // Scroll immediately multiple times
-            for (let i = 0; i < 20; i++) {
-                setTimeout(scrollToTop, i * 50);
-            }
-
-            // Keep scrolling to top for 2 seconds
-            const scrollInterval = setInterval(scrollToTop, 100);
-            setTimeout(() => clearInterval(scrollInterval), 2000);
-        })();
-        </script>
-    """, unsafe_allow_html=True)
-
-    st.title("Interview Simulation / การฝึกซ้อมสัมภาษณ์")
-
-    # ========================================================================
-    # TIMER SECTION / ส่วนตัวจับเวลา
-    # ========================================================================
-
     # Calculate remaining time / คำนวณเวลาที่เหลือ
     if st.session_state.timer_active and st.session_state.start_time:
         elapsed = datetime.now() - st.session_state.start_time
@@ -732,22 +702,38 @@ def page_chat():
     else:
         remaining_seconds = 0
 
-    # Display timer / แสดงตัวจับเวลา
+    # Change color based on time remaining / เปลี่ยนสีตามเวลาที่เหลือ
+    if remaining_seconds > 300:  # More than 5 minutes
+        timer_color = "#4a90a4"  # Medical blue
+    elif remaining_seconds > 60:  # More than 1 minute
+        timer_color = "#e67e22"  # Warm orange for caution
+    else:
+        timer_color = "#c0392b"  # Deep red for urgency
+
+    st.markdown(
+        f"<h2 style='text-align: center; color: {timer_color}; font-weight: 600;'>⏱️ {format_time(remaining_seconds)}</h2>",
+        unsafe_allow_html=True
+    )
+
+
+def page_chat():
+    """
+    Main chat interface with timer
+    หน้าสนทนากับ AI พร้อมตัวจับเวลา
+    """
+    st.title("Interview Simulation / การฝึกซ้อมสัมภาษณ์")
+
+    # ========================================================================
+    # TIMER SECTION / ส่วนตัวจับเวลา
+    # ========================================================================
+
+    # Display timer using fragment (updates independently) / แสดงตัวจับเวลาด้วย fragment (อัพเดทอิสระ)
     col1, col2, col3 = st.columns([2, 1, 1])
 
     with col2:
-        # Change color based on time remaining / เปลี่ยนสีตามเวลาที่เหลือ
-        if remaining_seconds > 300:  # More than 5 minutes
-            timer_color = "#4a90a4"  # Medical blue
-        elif remaining_seconds > 60:  # More than 1 minute
-            timer_color = "#e67e22"  # Warm orange for caution
-        else:
-            timer_color = "#c0392b"  # Deep red for urgency
-
-        st.markdown(
-            f"<h2 style='text-align: center; color: {timer_color}; font-weight: 600;'>⏱️ {format_time(remaining_seconds)}</h2>",
-            unsafe_allow_html=True
-        )
+        # Use the fragment timer that updates every second without reloading the page
+        # ใช้ fragment timer ที่อัพเดททุกวินาทีโดยไม่โหลดหน้าใหม่
+        display_timer()
 
     with col3:
         if st.button("🛑 End Case", type="secondary", use_container_width=True):
@@ -776,139 +762,70 @@ def page_chat():
     # ========================================================================
 
     # Display chat history / แสดงประวัติการสนทนา
-    chat_container = st.container(height=400)
+    if len(st.session_state.chat_history) == 0:
+        st.info("👋 Start the conversation by greeting the patient.")
 
-    with chat_container:
-        if len(st.session_state.chat_history) == 0:
-            st.info("👋 Start the conversation by greeting the patient.")
+    for message in st.session_state.chat_history:
+        if message["role"] == "user":
+            # Doctor's message (right side) / ข้อความของแพทย์ (ขวา)
+            st.markdown(
+                f"<div style='text-align: right; background: linear-gradient(135deg, #4a90a4 0%, #5ba3b8 100%); "
+                f"color: white; padding: 12px 16px; border-radius: 18px 18px 4px 18px; "
+                f"margin: 8px 0; box-shadow: 0 2px 4px rgba(74, 144, 164, 0.2); max-width: 80%; "
+                f"margin-left: auto;'>"
+                f"<b style='color: #e3f2fd;'>You:</b> {message['content']}</div>",
+                unsafe_allow_html=True
+            )
+        else:
+            # AI Patient's message (left side) / ข้อความของผู้ป่วย AI (ซ้าย)
+            st.markdown(
+                f"<div style='text-align: left; background-color: white; padding: 12px 16px; "
+                f"border-radius: 18px 18px 18px 4px; margin: 8px 0; "
+                f"border: 2px solid #e3f2fd; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08); "
+                f"max-width: 80%; color: #37474f;'>"
+                f"<b style='color: #2c5f7d;'>Patient:</b> {message['content']}</div>",
+                unsafe_allow_html=True
+            )
 
-        for message in st.session_state.chat_history:
-            if message["role"] == "user":
-                # Doctor's message (right side) / ข้อความของแพทย์ (ขวา)
-                st.markdown(
-                    f"<div style='text-align: right; background: linear-gradient(135deg, #4a90a4 0%, #5ba3b8 100%); "
-                    f"color: white; padding: 12px 16px; border-radius: 18px 18px 4px 18px; "
-                    f"margin: 8px 0; box-shadow: 0 2px 4px rgba(74, 144, 164, 0.2); max-width: 80%; "
-                    f"margin-left: auto;'>"
-                    f"<b style='color: #e3f2fd;'>You:</b> {message['content']}</div>",
-                    unsafe_allow_html=True
-                )
-            else:
-                # AI Patient's message (left side) / ข้อความของผู้ป่วย AI (ซ้าย)
-                st.markdown(
-                    f"<div style='text-align: left; background-color: white; padding: 12px 16px; "
-                    f"border-radius: 18px 18px 18px 4px; margin: 8px 0; "
-                    f"border: 2px solid #e3f2fd; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08); "
-                    f"max-width: 80%; color: #37474f;'>"
-                    f"<b style='color: #2c5f7d;'>Patient:</b> {message['content']}</div>",
-                    unsafe_allow_html=True
-                )
+    # ========================================================================
+    # CHAT INPUT - Using native st.chat_input / ใช้ st.chat_input แบบ native
+    # ========================================================================
 
-    # Chat input / ช่องพิมพ์ข้อความ (render first to prevent disappearing)
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Check if waiting for AI response / ตรวจสอบว่ากำลังรอ AI หรือไม่
-    is_waiting = 'waiting_for_ai' in st.session_state and st.session_state.waiting_for_ai
-
-    # Use a form for better UX / ใช้ฟอร์มเพื่อ UX ที่ดีขึ้น
-    with st.form(key="chat_form", clear_on_submit=True):
-        user_input = st.text_input(
-            "Your message / ข้อความของคุณ:",
-            placeholder="Type your question or response here..." + (" (waiting for patient...)" if is_waiting else ""),
-            label_visibility="collapsed",
+    # Check if timer is still active / ตรวจสอบว่าตัวจับเวลายังทำงานอยู่หรือไม่
+    if st.session_state.timer_active:
+        # Use st.chat_input for a pinned chat bar at the bottom
+        # ใช้ st.chat_input เพื่อสร้างแถบแชทที่ปักหมุดไว้ด้านล่าง
+        user_input = st.chat_input(
+            placeholder="Type your question or response here...",
             key="chat_input"
-            # Note: Removed disabled=is_waiting to allow typing while waiting
-            # หมายเหตุ: ลบ disabled เพื่อให้พิมพ์ได้ขณะรอ AI ตอบ
         )
 
-        # Add JavaScript to auto-focus the input / เพิ่ม JavaScript เพื่อให้ cursor ปรากฏอัตโนมัติ
-        st.markdown("""
-            <script>
-            // Aggressive auto-focus with MutationObserver
-            // Focus textbox อัตโนมัติแบบแน่นหนา
-            (function() {
-                function focusChatInput() {
-                    const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-                    if (inputs.length > 0) {
-                        const chatInput = inputs[inputs.length - 1];
-                        chatInput.focus();
-                        const len = chatInput.value.length;
-                        chatInput.setSelectionRange(len, len);
-                    }
-                }
-
-                // Initial focus attempts
-                for (let i = 0; i < 30; i++) {
-                    setTimeout(focusChatInput, i * 100);
-                }
-
-                // Continuous focus every 150ms for 5 seconds
-                const focusInterval = setInterval(focusChatInput, 150);
-                setTimeout(() => clearInterval(focusInterval), 5000);
-
-                // Watch for DOM changes and refocus
-                const observer = new MutationObserver(function() {
-                    setTimeout(focusChatInput, 50);
-                });
-
-                observer.observe(window.parent.document.body, {
-                    childList: true,
-                    subtree: true
-                });
-
-                // Stop observing after 5 seconds
-                setTimeout(() => observer.disconnect(), 5000);
-
-                // Focus on any click that doesn't target a button or link
-                window.parent.document.addEventListener('click', function(e) {
-                    if (!e.target.matches('button, a, [role="button"]')) {
-                        setTimeout(focusChatInput, 10);
-                    }
-                });
-            })();
-            </script>
-        """, unsafe_allow_html=True)
-
-        submit_button = st.form_submit_button(
-            "Send 📤" if not is_waiting else "⏳ Waiting...",
-            use_container_width=True,
-            disabled=is_waiting  # Only disable the Send button, not the textbox
-        )
-
-    # Process user input / ประมวลผลข้อความ
-    if submit_button and user_input and not is_waiting:
-        if st.session_state.timer_active:
-            # Add user message to history immediately / เพิ่มข้อความผู้ใช้ในประวัติทันที
+        # Process user input when entered / ประมวลผลข้อความเมื่อผู้ใช้กด Enter
+        if user_input:
+            # Add user message to history / เพิ่มข้อความผู้ใช้ในประวัติ
             st.session_state.chat_history.append({
                 "role": "user",
                 "content": user_input
             })
-            # Set flag to get AI response on next render / ตั้งค่าเพื่อรับคำตอบ AI ในรอบถัดไป
-            st.session_state.waiting_for_ai = True
+
+            # Get AI response / รับคำตอบจาก AI
+            with st.spinner("Patient is responding... / ผู้ป่วยกำลังตอบ..."):
+                ai_response = get_ai_response(
+                    st.session_state.chat_history,
+                    st.session_state.case_context
+                )
+
+            # Add AI response to history / เพิ่มคำตอบ AI ในประวัติ
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "content": ai_response
+            })
+
+            # Rerun to update the UI / รีรันเพื่ออัพเดท UI
             st.rerun()
-        else:
-            st.warning("⏰ Time's up! Please end the case.")
-
-    # Check if we need to get AI response (after form is rendered) / ตรวจสอบว่าต้องรับคำตอบจาก AI หรือไม่
-    if is_waiting:
-        with st.spinner("Patient is responding... / ผู้ป่วยกำลังตอบ..."):
-            ai_response = get_ai_response(
-                st.session_state.chat_history,
-                st.session_state.case_context
-            )
-
-        # Add AI response to history / เพิ่มคำตอบ AI ในประวัติ
-        st.session_state.chat_history.append({
-            "role": "assistant",
-            "content": ai_response
-        })
-        st.session_state.waiting_for_ai = False
-        st.rerun()
-
-    # Auto-refresh for timer / รีเฟรชอัตโนมัติสำหรับตัวจับเวลา
-    if st.session_state.timer_active and remaining_seconds > 0:
-        time.sleep(1)
-        st.rerun()
+    else:
+        # Timer ended, disable input / หมดเวลาแล้ว ปิดการพิมพ์
+        st.warning("⏰ Time's up! Please end the case.")
 
 
 # ============================================================================
