@@ -529,10 +529,14 @@ def page_pre_brief():
     # Display case information from configuration / แสดงข้อมูลเคสจากการตั้งค่า
     st.info(case_config.CASE_INFORMATION)
 
-    # Store case configuration in session state / บันทึกการตั้งค่าเคสใน session state
-    st.session_state.case_context = case_config.CASE_INFORMATION
-    st.session_state.case_system_prompt = case_config.SYSTEM_PROMPT
-    st.session_state.case_model = case_config.MODEL_NAME
+    # Store case configuration in session state ONLY if not already set or if case changed
+    # บันทึกการตั้งค่าเคสใน session state เฉพาะครั้งแรกหรือเมื่อเปลี่ยนเคส
+    if ('case_context' not in st.session_state or
+        st.session_state.get('current_case_name') != case_config.CASE_NAME):
+        st.session_state.case_context = case_config.CASE_INFORMATION
+        st.session_state.case_system_prompt = case_config.SYSTEM_PROMPT
+        st.session_state.case_model = case_config.MODEL_NAME
+        st.session_state.current_case_name = case_config.CASE_NAME
 
     st.markdown("<br>", unsafe_allow_html=True)
 
