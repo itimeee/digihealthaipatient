@@ -569,22 +569,35 @@ def page_pre_brief():
 
     st.markdown("<br>", unsafe_allow_html=True)
 
+    # Callback function for Start Case button / ฟังก์ชันสำหรับปุ่มเริ่มเคส
+    def start_case_callback():
+        """Callback to start the case interview / เริ่มการสัมภาษณ์"""
+        st.session_state.page = 'chat'
+        st.session_state.start_time = datetime.now()
+        st.session_state.timer_active = True
+
+    # Callback function for Back button / ฟังก์ชันสำหรับปุ่มย้อนกลับ
+    def back_to_case_selection_callback():
+        """Callback to return to case selection / กลับไปหน้าเลือกเคส"""
+        st.session_state.page = 'case_selection'
+
     # Start Case button / ปุ่มเริ่มเคส
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        if st.button("▶️ Start Case", use_container_width=True, type="primary",
-                    disabled=('Voice Mode' in mode)):
-            # Navigate to chat page / ไปหน้าแชท
-            st.session_state.page = 'chat'
-            st.session_state.start_time = datetime.now()
-            st.session_state.timer_active = True
-            st.rerun()
+        st.button(
+            "▶️ Start Case",
+            use_container_width=True,
+            type="primary",
+            disabled=('Voice Mode' in mode),
+            on_click=start_case_callback
+        )
 
     # Back button / ปุ่มย้อนกลับ
     st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("⬅️ Back to Case Selection"):
-        st.session_state.page = 'case_selection'
-        st.rerun()
+    st.button(
+        "⬅️ Back to Case Selection",
+        on_click=back_to_case_selection_callback
+    )
 
 
 # ============================================================================
