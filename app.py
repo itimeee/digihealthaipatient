@@ -543,26 +543,96 @@ def page_pre_brief():
     # Mode selection / เลือกโหมด
     st.subheader("Select Interview Mode / เลือกโหมดการสัมภาษณ์")
 
-    # Radio button for mode selection / ปุ่มเลือกโหมด
-    # Note: Using key= means Streamlit manages the state automatically
-    # หมายเหตุ: การใช้ key= ทำให้ Streamlit จัดการ state อัตโนมัติ
-    mode = st.radio(
-        "Choose your preferred mode:",
-        options=[
-            '💬 **Text Mode** - Type your questions and responses',
-            '🎤 **Voice Mode** - Speak with the AI patient (Coming Soon)'
-        ],
-        index=0,
-        horizontal=False,
-        disabled=False,
-        key='mode_selector',
-        help="Select how you want to interact with the AI patient"
-    )
+    # Initialize selected mode in session state / เริ่มต้นโหมดที่เลือกใน session state
+    if 'selected_mode' not in st.session_state:
+        st.session_state.selected_mode = 'text'
+
+    # Callback functions for mode selection / ฟังก์ชันสำหรับเลือกโหมด
+    def select_text_mode():
+        """Select text mode / เลือกโหมดข้อความ"""
+        st.session_state.selected_mode = 'text'
+
+    def select_voice_mode():
+        """Select voice mode / เลือกโหมดเสียง"""
+        st.session_state.selected_mode = 'voice'
+
+    # Create 2 columns for mode buttons / สร้าง 2 คอลัมน์สำหรับปุ่มโหมด
+    col1, col2 = st.columns(2)
+
+    # Text Mode button / ปุ่มโหมดข้อความ
+    with col1:
+        # Determine styling based on selection / กำหนดสไตล์ตามการเลือก
+        if st.session_state.selected_mode == 'text':
+            card_bg = "white"
+            border_color = "#4a90a4"
+            shadow = "0 4px 12px rgba(74, 144, 164, 0.15)"
+            title_color = "#2c5f7d"
+            text_color = "#5a7a8a"
+            border_width = "3px"
+        else:
+            card_bg = "white"
+            border_color = "#d0d0d0"
+            shadow = "0 2px 8px rgba(0, 0, 0, 0.08)"
+            title_color = "#6b7280"
+            text_color = "#9ca3af"
+            border_width = "2px"
+
+        st.markdown(f"""
+            <div style='background: {card_bg}; padding: 25px; border-radius: 16px;
+                        border: {border_width} solid {border_color}; box-shadow: {shadow};
+                        text-align: center;'>
+                <h2 style='color: {title_color}; margin: 0; font-size: 2em;'>💬</h2>
+                <h3 style='color: {title_color}; margin: 10px 0;'>Text Mode</h3>
+                <p style='color: {text_color}; margin: 0; font-size: 0.9em;'>
+                    Type your questions and responses
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        st.button(
+            "✅ Selected" if st.session_state.selected_mode == 'text' else "Select Text Mode",
+            use_container_width=True,
+            type="primary" if st.session_state.selected_mode == 'text' else "secondary",
+            on_click=select_text_mode,
+            key="text_mode_button"
+        )
+
+    # Voice Mode button / ปุ่มโหมดเสียง
+    with col2:
+        # Voice mode is always disabled (coming soon) / โหมดเสียงยังไม่พร้อมใช้งาน
+        card_bg = "#f8f9fa"
+        border_color = "#e0e0e0"
+        shadow = "0 2px 8px rgba(0, 0, 0, 0.08)"
+        title_color = "#9e9e9e"
+        text_color = "#9e9e9e"
+
+        st.markdown(f"""
+            <div style='background: {card_bg}; padding: 25px; border-radius: 16px;
+                        border: 2px solid {border_color}; box-shadow: {shadow};
+                        text-align: center;'>
+                <h2 style='color: {title_color}; margin: 0; font-size: 2em;'>🎤</h2>
+                <h3 style='color: {title_color}; margin: 10px 0;'>Voice Mode</h3>
+                <p style='color: {text_color}; margin: 0; font-size: 0.9em;'>
+                    🔒 Coming Soon
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        st.button(
+            "Voice Mode (Coming Soon)",
+            use_container_width=True,
+            type="secondary",
+            disabled=True,
+            on_click=select_voice_mode,
+            key="voice_mode_button"
+        )
 
     st.markdown("<br>", unsafe_allow_html=True)
 
     # Show info about selected mode / แสดงข้อมูลเกี่ยวกับโหมดที่เลือก
-    if 'Voice Mode' in mode:
+    if st.session_state.selected_mode == 'voice':
         st.info("🎤 **Voice Mode** will be available in a future update. This mode will allow you to speak naturally with the AI patient using voice recognition. Please select Text Mode to continue.")
     else:
         st.success("✅ **Text Mode selected.** You will type your questions and the AI patient will respond in text. Click 'Start Case' when you're ready to begin the interview.")
@@ -588,7 +658,7 @@ def page_pre_brief():
             "▶️ Start Case",
             use_container_width=True,
             type="primary",
-            disabled=('Voice Mode' in mode),
+            disabled=(st.session_state.selected_mode == 'voice'),
             on_click=start_case_callback
         )
 
@@ -729,13 +799,25 @@ def page_chat():
         # Add JavaScript to auto-focus the input / เพิ่ม JavaScript เพื่อให้ cursor ปรากฏอัตโนมัติ
         st.markdown("""
             <script>
-            // Auto-focus on chat input after page load
-            setTimeout(function() {
+            // Auto-focus on chat input after page load and after form submit
+            // Focus กลับมาที่ textbox หลังจากกด Send
+            function focusChatInput() {
                 const inputs = window.parent.document.querySelectorAll('input[type="text"]');
                 if (inputs.length > 0) {
-                    inputs[inputs.length - 1].focus();
+                    // Focus the last text input (chat input)
+                    const chatInput = inputs[inputs.length - 1];
+                    chatInput.focus();
+                    // Move cursor to end of text
+                    chatInput.setSelectionRange(chatInput.value.length, chatInput.value.length);
                 }
-            }, 100);
+            }
+
+            // Focus immediately after load
+            setTimeout(focusChatInput, 100);
+
+            // Focus again after a short delay (catches post-submit rerun)
+            setTimeout(focusChatInput, 300);
+            setTimeout(focusChatInput, 500);
             </script>
         """, unsafe_allow_html=True)
 
