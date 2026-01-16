@@ -719,10 +719,11 @@ def page_chat():
     with st.form(key="chat_form", clear_on_submit=True):
         user_input = st.text_input(
             "Your message / ข้อความของคุณ:",
-            placeholder="Type your question or response here..." if not is_waiting else "Please wait for patient response...",
+            placeholder="Type your question or response here..." + (" (waiting for patient...)" if is_waiting else ""),
             label_visibility="collapsed",
-            key="chat_input",
-            disabled=is_waiting  # Disable while waiting for AI
+            key="chat_input"
+            # Note: Removed disabled=is_waiting to allow typing while waiting
+            # หมายเหตุ: ลบ disabled เพื่อให้พิมพ์ได้ขณะรอ AI ตอบ
         )
 
         # Add JavaScript to auto-focus the input / เพิ่ม JavaScript เพื่อให้ cursor ปรากฏอัตโนมัติ
@@ -741,7 +742,7 @@ def page_chat():
         submit_button = st.form_submit_button(
             "Send 📤" if not is_waiting else "⏳ Waiting...",
             use_container_width=True,
-            disabled=is_waiting
+            disabled=is_waiting  # Only disable the Send button, not the textbox
         )
 
     # Process user input / ประมวลผลข้อความ
@@ -967,6 +968,7 @@ def main():
             padding: 12px !important;
             transition: border-color 0.3s ease !important;
             color: #2c3e50 !important;
+            caret-color: black !important; /* Text cursor color */
         }
 
         .stTextInput>div>div>input:focus {
