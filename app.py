@@ -232,29 +232,13 @@ def get_latest_session_data():
 # GEMINI AI SETUP / ตั้งค่า Gemini AI
 # ============================================================================
 
-@st.cache_resource
-def configure_gemini_api():
-    """
-    Configure Gemini API with API key (cached, runs once)
-    ตั้งค่า API key สำหรับ Gemini (แคชไว้ ใช้ครั้งเดียว)
-
-    Returns:
-        bool: True if configuration successful, False otherwise
-    """
-    try:
-        api_key = st.secrets["GEMINI_API_KEY"]
-        genai.configure(api_key=api_key)
-        return True
-    except Exception as e:
-        st.error(f"Error configuring Gemini API: {e}")
-        st.error("Please add your GEMINI_API_KEY to secrets.toml")
-        return False
-
-
 def get_gemini_model(model_name=None):
     """
-    Get Gemini model instance (creates new instance each time)
-    สร้าง Gemini model (สร้างใหม่ทุกครั้ง)
+    Get Gemini model instance - initializes API and creates model
+    สร้าง Gemini model พร้อมตั้งค่า API
+
+    This function does NOT use caching to avoid SessionInfo initialization errors.
+    It's designed to be called only when needed (during chat).
 
     Args:
         model_name: Name of the model to use (optional, defaults to MODEL_NAME)
@@ -262,17 +246,24 @@ def get_gemini_model(model_name=None):
     Returns:
         GenerativeModel instance or None if configuration fails
     """
-    # Configure API if not already done (cached call)
-    if not configure_gemini_api():
-        return None
-
     try:
-        # Use provided model_name or fall back to default
+        # Configure API with key from secrets
+        # ตั้งค่า API ด้วย key จาก secrets
+        api_key = st.secrets.get("GEMINI_API_KEY")
+        if not api_key:
+            st.error("GEMINI_API_KEY not found in secrets")
+            return None
+
+        genai.configure(api_key=api_key)
+
+        # Create model instance
+        # สร้าง model instance
         selected_model = model_name if model_name else MODEL_NAME
         model = genai.GenerativeModel(selected_model)
         return model
+
     except Exception as e:
-        st.error(f"Error creating Gemini model '{model_name}': {e}")
+        st.error(f"Error initializing Gemini model: {e}")
         return None
 
 
@@ -548,16 +539,14 @@ def page_pre_brief():
     # Mode selection / เลือกโหมด
     st.subheader("Select Interview Mode / เลือกโหมดการสัมภาษณ์")
 
-    # Initialize selected mode in session state / เริ่มต้นโหมดที่เลือกใน session state
-    if 'selected_mode' not in st.session_state:
-        st.session_state.selected_mode = 'Text Mode'
-
     # Radio button for mode selection / ปุ่มเลือกโหมด
+    # Note: Using key= means Streamlit manages the state automatically
+    # หมายเหตุ: การใช้ key= ทำให้ Streamlit จัดการ state อัตโนมัติ
     mode = st.radio(
         "Choose your preferred mode:",
         options=[
-            'Text 💬 **Text Mode** - Type your questions and responses',
-            'Voice 🎤 **Voice Mode** - Speak with the AI patient (Coming Soon)'
+            '💬 **Text Mode** - Type your questions and responses',
+            '🎤 **Voice Mode** - Speak with the AI patient (Coming Soon)'
         ],
         index=0,
         horizontal=False,
@@ -565,9 +554,6 @@ def page_pre_brief():
         key='mode_selector',
         help="Select how you want to interact with the AI patient"
     )
-
-    # Store selected mode / บันทึกโหมดที่เลือก
-    st.session_state.selected_mode = mode
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -583,7 +569,7 @@ def page_pre_brief():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         if st.button("▶️ Start Case", use_container_width=True, type="primary",
-                    disabled=('Voice Mode' in st.session_state.selected_mode)):
+                    disabled=('Voice Mode' in mode)):
             # Navigate to chat page / ไปหน้าแชท
             st.session_state.page = 'chat'
             st.session_state.start_time = datetime.now()
