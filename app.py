@@ -583,20 +583,8 @@ def page_pre_brief():
                         text-align: center;'>
                 <h2 style='color: {title_color}; margin: 0; font-size: 2em;'>💬</h2>
                 <h3 style='color: {title_color}; margin: 10px 0;'>Text Mode</h3>
-                <p style='color: {text_color}; margin: 0; font-size: 0.9em;'>
-                    Type your questions and responses
-                </p>
             </div>
         """, unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        st.button(
-            "✅ Selected" if st.session_state.selected_mode == 'text' else "Select Text Mode",
-            use_container_width=True,
-            type="primary" if st.session_state.selected_mode == 'text' else "secondary",
-            on_click=select_text_mode,
-            key="text_mode_button"
-        )
 
     # Voice Mode button / ปุ่มโหมดเสียง
     with col2:
@@ -613,21 +601,8 @@ def page_pre_brief():
                         text-align: center;'>
                 <h2 style='color: {title_color}; margin: 0; font-size: 2em;'>🎤</h2>
                 <h3 style='color: {title_color}; margin: 10px 0;'>Voice Mode</h3>
-                <p style='color: {text_color}; margin: 0; font-size: 0.9em;'>
-                    🔒 Coming Soon
-                </p>
             </div>
         """, unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        st.button(
-            "Voice Mode (Coming Soon)",
-            use_container_width=True,
-            type="secondary",
-            disabled=True,
-            on_click=select_voice_mode,
-            key="voice_mode_button"
-        )
 
     st.markdown("<br>", unsafe_allow_html=True)
 
