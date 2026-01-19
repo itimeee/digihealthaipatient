@@ -7,6 +7,7 @@ Contamination Fears - Healthcare Worker
 CASE_NAME = "Case F"
 CASE_TITLE = "OCD - Contamination Fears"
 MODEL_NAME = "gemini-2.5-flash"  # AI model for this case
+TEMPERATURE = 0.3  # Temperature for API calls (0.0-1.0, lower = more focused/consistent)
 IS_ACTIVE = False  # Coming soon
 
 # Case Information / ข้อมูลเคส

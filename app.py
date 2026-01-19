@@ -277,9 +277,10 @@ def get_ai_response(chat_history, case_context):
         case_context: Case information for context / ข้อมูลเคสสำหรับบริบท
     """
     try:
-        # Get case-specific model and prompt from session state / ดึงโมเดลและ prompt เฉพาะของเคส
+        # Get case-specific model, prompt, and temperature from session state / ดึงโมเดล prompt และ temperature เฉพาะของเคส
         case_model = st.session_state.get('case_model', MODEL_NAME)
         case_prompt = st.session_state.get('case_system_prompt', SYSTEM_PROMPT)
+        case_temperature = st.session_state.get('case_temperature', 0.3)
 
         # Get cached model with case-specific model name / ดึงโมเดลที่แคชไว้ตามชื่อของเคส
         model = get_gemini_model(case_model)
@@ -300,8 +301,13 @@ def get_ai_response(chat_history, case_context):
 
         full_prompt += "Patient: "
 
-        # Get response / รับคำตอบ
-        response = model.generate_content(full_prompt)
+        # Configure generation parameters with case-specific temperature / ตั้งค่าพารามิเตอร์การสร้างด้วย temperature เฉพาะของเคส
+        generation_config = {
+            "temperature": case_temperature,
+        }
+
+        # Get response with temperature configuration / รับคำตอบพร้อมการตั้งค่า temperature
+        response = model.generate_content(full_prompt, generation_config=generation_config)
         return response.text
 
     except Exception as e:
@@ -536,6 +542,7 @@ def page_pre_brief():
         st.session_state.case_context = case_config.CASE_INFORMATION
         st.session_state.case_system_prompt = case_config.SYSTEM_PROMPT
         st.session_state.case_model = case_config.MODEL_NAME
+        st.session_state.case_temperature = case_config.TEMPERATURE
         st.session_state.current_case_name = case_config.CASE_NAME
 
     st.markdown("<br>", unsafe_allow_html=True)

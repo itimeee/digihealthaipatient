@@ -7,6 +7,7 @@ Manic Episode - Business Owner
 CASE_NAME = "Case C"
 CASE_TITLE = "Bipolar Disorder - Manic Episode"
 MODEL_NAME = "gemini-2.5-flash"  # AI model for this case
+TEMPERATURE = 0.3  # Temperature for API calls (0.0-1.0, lower = more focused/consistent)
 IS_ACTIVE = False  # Coming soon
 
 # Case Information / ข้อมูลเคส
