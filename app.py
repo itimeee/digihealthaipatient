@@ -1099,17 +1099,18 @@ def main():
             border-radius: 16px !important;
             font-size: 1.1em !important;
             white-space: pre-line !important;
-            background-color: white !important;
-            box-shadow: 0 4px 12px rgba(74, 144, 164, 0.15) !important;
-            border: 3px solid #4a90a4 !important;
-            color: #2c5f7d !important;
-            font-weight: 600 !important;
+            background: linear-gradient(135deg, #e3f2fd 0%, #f0f8fb 100%) !important;
+            box-shadow: 0 6px 20px rgba(74, 144, 164, 0.3) !important;
+            border: 4px solid #4a90a4 !important;
+            color: #1a4d5f !important;
+            font-weight: 700 !important;
             transition: all 0.3s ease !important;
+            transform: scale(1.02) !important;
         }
 
         .mode-card-button-selected button:hover {
-            box-shadow: 0 6px 16px rgba(74, 144, 164, 0.25) !important;
-            transform: translateY(-2px) !important;
+            box-shadow: 0 8px 24px rgba(74, 144, 164, 0.4) !important;
+            transform: scale(1.02) translateY(-2px) !important;
         }
         </style>
     """, unsafe_allow_html=True)
