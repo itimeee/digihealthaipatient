@@ -585,24 +585,47 @@ def page_pre_brief():
                 <h3 style='color: {title_color}; margin: 10px 0;'>Text Mode</h3>
             </div>
         """, unsafe_allow_html=True)
+        st.button(
+            "Select Text Mode",
+            key="btn_text_mode",
+            use_container_width=True,
+            on_click=select_text_mode,
+            type="primary" if st.session_state.selected_mode == 'text' else "secondary"
+        )
 
     # Voice Mode button / ปุ่มโหมดเสียง
     with col2:
-        # Voice mode is always disabled (coming soon) / โหมดเสียงยังไม่พร้อมใช้งาน
-        card_bg = "#f8f9fa"
-        border_color = "#e0e0e0"
-        shadow = "0 2px 8px rgba(0, 0, 0, 0.08)"
-        title_color = "#9e9e9e"
-        text_color = "#9e9e9e"
+        # Determine styling based on selection / กำหนดสไตล์ตามการเลือก
+        if st.session_state.selected_mode == 'voice':
+            card_bg = "white"
+            border_color = "#4a90a4"
+            shadow = "0 4px 12px rgba(74, 144, 164, 0.15)"
+            title_color = "#2c5f7d"
+            text_color = "#5a7a8a"
+            border_width = "3px"
+        else:
+            card_bg = "white"
+            border_color = "#d0d0d0"
+            shadow = "0 2px 8px rgba(0, 0, 0, 0.08)"
+            title_color = "#6b7280"
+            text_color = "#9ca3af"
+            border_width = "2px"
 
         st.markdown(f"""
             <div style='background: {card_bg}; padding: 25px; border-radius: 16px;
-                        border: 2px solid {border_color}; box-shadow: {shadow};
+                        border: {border_width} solid {border_color}; box-shadow: {shadow};
                         text-align: center;'>
                 <h2 style='color: {title_color}; margin: 0; font-size: 2em;'>🎤</h2>
                 <h3 style='color: {title_color}; margin: 10px 0;'>Voice Mode</h3>
             </div>
         """, unsafe_allow_html=True)
+        st.button(
+            "Select Voice Mode",
+            key="btn_voice_mode",
+            use_container_width=True,
+            on_click=select_voice_mode,
+            type="primary" if st.session_state.selected_mode == 'voice' else "secondary"
+        )
 
     st.markdown("<br>", unsafe_allow_html=True)
 
