@@ -65,7 +65,7 @@ def get_google_credentials():
         return None
 
 
-def save_session_to_sheet(user_name, user_email, chat_history):
+def save_session_to_sheet(user_name, user_email, chat_history, case_name=None):
     """
     Append session data to existing Google Sheet
     เพิ่มข้อมูลเซสชันลงใน Google Sheet ที่มีอยู่
@@ -74,6 +74,7 @@ def save_session_to_sheet(user_name, user_email, chat_history):
         user_name: Name of the user / ชื่อผู้ใช้
         user_email: Email of the user / อีเมลผู้ใช้
         chat_history: List of chat messages / ประวัติการสนทนา
+        case_name: Name of the case (e.g., "Case A") / ชื่อเคส
     """
     try:
         # Get credentials / รับข้อมูลรับรอง
@@ -96,14 +97,14 @@ def save_session_to_sheet(user_name, user_email, chat_history):
         existing_data = worksheet.get_all_values()
         if not existing_data or existing_data[0][0] != "Session ID":
             # Add headers if sheet is empty / เพิ่ม header ถ้าชีทว่าง
-            headers = ["Session ID", "Timestamp", "User Name", "User Email", "Speaker", "Message"]
+            headers = ["Session ID", "Timestamp", "User Name", "User Email", "Case Name", "Speaker", "Message"]
             worksheet.insert_row(headers, 1)
 
         # Prepare rows to append / เตรียมแถวที่จะเพิ่ม
         rows_to_add = []
 
         # Add session separator row / เพิ่มแถวแบ่งเซสชัน
-        separator = [f"=== SESSION START: {session_id} ===", session_time, user_name, user_email, "", ""]
+        separator = [f"=== SESSION START: {session_id} ===", session_time, user_name, user_email, case_name or "", "", ""]
         rows_to_add.append(separator)
 
         # Add all chat messages / เพิ่มข้อความสนทนาทั้งหมด
@@ -113,17 +114,18 @@ def save_session_to_sheet(user_name, user_email, chat_history):
                 session_time,
                 user_name,
                 user_email,
+                case_name or "",
                 message["role"],
                 message["content"]
             ]
             rows_to_add.append(row)
 
         # Add session end separator / เพิ่มแถวปิดเซสชัน
-        end_separator = [f"=== SESSION END: {session_id} ===", session_time, user_name, user_email, "", f"Total messages: {len(chat_history)}"]
+        end_separator = [f"=== SESSION END: {session_id} ===", session_time, user_name, user_email, case_name or "", "", f"Total messages: {len(chat_history)}"]
         rows_to_add.append(end_separator)
 
         # Add empty row for spacing / เพิ่มแถวว่างเพื่อเว้นระยะ
-        rows_to_add.append(["", "", "", "", "", ""])
+        rows_to_add.append(["", "", "", "", "", "", ""])
 
         # Append all rows at once (more efficient) / เพิ่มทุกแถวพร้อมกัน (เร็วกว่า)
         worksheet.append_rows(rows_to_add)
@@ -138,7 +140,7 @@ def save_session_to_sheet(user_name, user_email, chat_history):
         return False
 
 
-def save_latest_session(user_name, user_email, chat_history):
+def save_latest_session(user_name, user_email, chat_history, case_name=None):
     """
     Replace data in latest session sheet (for displaying most recent interview)
     แทนที่ข้อมูลในชีทเซสชันล่าสุด (สำหรับแสดงการสัมภาษณ์ล่าสุด)
@@ -147,6 +149,7 @@ def save_latest_session(user_name, user_email, chat_history):
         user_name: Name of the user / ชื่อผู้ใช้
         user_email: Email of the user / อีเมลผู้ใช้
         chat_history: List of chat messages / ประวัติการสนทนา
+        case_name: Name of the case (e.g., "Case A") / ชื่อเคส
     """
     try:
         # Get credentials / รับข้อมูลรับรอง
@@ -172,7 +175,7 @@ def save_latest_session(user_name, user_email, chat_history):
         all_rows = []
 
         # Add headers / เพิ่มหัวตาราง
-        headers = ["Session ID", "Timestamp", "User Name", "User Email", "Speaker", "Message"]
+        headers = ["Session ID", "Timestamp", "User Name", "User Email", "Case Name", "Speaker", "Message"]
         all_rows.append(headers)
 
         # Add all chat messages / เพิ่มข้อความสนทนาทั้งหมด
@@ -182,6 +185,7 @@ def save_latest_session(user_name, user_email, chat_history):
                 session_time,
                 user_name,
                 user_email,
+                case_name or "",
                 message["role"],
                 message["content"]
             ]
@@ -711,13 +715,15 @@ def page_chat():
                 save_session_to_sheet(
                     st.session_state.user_name,
                     st.session_state.user_email,
-                    st.session_state.chat_history
+                    st.session_state.chat_history,
+                    st.session_state.get('current_case_name', None)
                 )
                 # Save to latest session sheet / บันทึกไปชีทเซสชันล่าสุด
                 save_latest_session(
                     st.session_state.user_name,
                     st.session_state.user_email,
-                    st.session_state.chat_history
+                    st.session_state.chat_history,
+                    st.session_state.get('current_case_name', None)
                 )
             st.session_state.page = 'end'
             st.rerun()
