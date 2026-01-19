@@ -7,11 +7,10 @@ import streamlit as st
 import google.generativeai as genai
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime, timedelta
-import time
+from datetime import datetime
 
 # Import case configurations / นำเข้าการตั้งค่าเคส
-from cases import ALL_CASES, get_case_by_name, get_active_cases, get_inactive_cases
+from cases import ALL_CASES, get_case_by_name
 
 # ============================================================================
 # CONFIGURATION / การตั้งค่า
@@ -129,9 +128,6 @@ def save_session_to_sheet(user_name, user_email, chat_history, case_name=None):
 
         # Append all rows at once (more efficient) / เพิ่มทุกแถวพร้อมกัน (เร็วกว่า)
         worksheet.append_rows(rows_to_add)
-
-        # Save the sheet URL in session state / บันทึก URL ใน session state
-        st.session_state.sheet_url = spreadsheet.url
 
         return True
 
@@ -349,9 +345,6 @@ def initialize_session_state():
     if 'timer_active' not in st.session_state:
         st.session_state.timer_active = False
 
-    if 'sheet_url' not in st.session_state:
-        st.session_state.sheet_url = None
-
 
 # ============================================================================
 # PAGE 1: HOMEPAGE / LOGIN
@@ -405,8 +398,55 @@ def page_login():
 
 
 # ============================================================================
-# PAGE 2: CASE SELECTION
+# PAGE 2: CASE SELECTION / HELPER FUNCTIONS
 # ============================================================================
+
+def render_case_card(case, col):
+    """
+    Render a case selection card with styling and button
+    แสดงการ์ดเลือกเคสพร้อมสไตล์และปุ่ม
+
+    Args:
+        case: Case configuration object / ข้อมูลเคส
+        col: Streamlit column object / คอลัมน์สำหรับแสดงผล
+    """
+    with col:
+        # Determine card style based on active status / กำหนดสไตล์ตามสถานะ
+        if case.IS_ACTIVE:
+            card_bg = "white"
+            border_color = "#4a90a4"
+            shadow = "0 4px 12px rgba(74, 144, 164, 0.15)"
+            title_color = "#2c5f7d"
+            text_color = "#5a7a8a"
+            status_text = f"✅ {case.CASE_TITLE}"
+        else:
+            card_bg = "#f8f9fa"
+            border_color = "#e0e0e0"
+            shadow = "0 2px 8px rgba(0, 0, 0, 0.08)"
+            title_color = "#9e9e9e"
+            text_color = "#9e9e9e"
+            status_text = "🔒 Coming Soon"
+
+        st.markdown(f"""
+            <div style='background: {card_bg}; padding: 25px; border-radius: 16px;
+                        border: 2px solid {border_color}; box-shadow: {shadow};'>
+                <h3 style='color: {title_color}; margin-top: 0;'>📋 {case.CASE_NAME}</h3>
+                <p style='color: {text_color}; margin-bottom: 0; font-size: 0.9em;'>{status_text}</p>
+            </div>
+        """, unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if st.button(
+            f"Select {case.CASE_NAME}" if case.IS_ACTIVE else f"{case.CASE_NAME} (Coming Soon)",
+            use_container_width=True,
+            type="primary" if case.IS_ACTIVE else "secondary",
+            disabled=not case.IS_ACTIVE,
+            key=f"case_button_{case.CASE_NAME}"
+        ):
+            st.session_state.selected_case = case.CASE_NAME
+            st.session_state.page = 'pre_brief'
+            st.rerun()
+
 
 def page_case_selection():
     """
@@ -424,43 +464,7 @@ def page_case_selection():
 
     for idx, col in enumerate([col1, col2, col3]):
         if idx < len(ALL_CASES):
-            case = ALL_CASES[idx]
-            with col:
-                # Determine card style based on active status / กำหนดสไตล์ตามสถานะ
-                if case.IS_ACTIVE:
-                    card_bg = "white"
-                    border_color = "#4a90a4"
-                    shadow = "0 4px 12px rgba(74, 144, 164, 0.15)"
-                    title_color = "#2c5f7d"
-                    text_color = "#5a7a8a"
-                    status_text = f"✅ {case.CASE_TITLE}"
-                else:
-                    card_bg = "#f8f9fa"
-                    border_color = "#e0e0e0"
-                    shadow = "0 2px 8px rgba(0, 0, 0, 0.08)"
-                    title_color = "#9e9e9e"
-                    text_color = "#9e9e9e"
-                    status_text = "🔒 Coming Soon"
-
-                st.markdown(f"""
-                    <div style='background: {card_bg}; padding: 25px; border-radius: 16px;
-                                border: 2px solid {border_color}; box-shadow: {shadow};'>
-                        <h3 style='color: {title_color}; margin-top: 0;'>📋 {case.CASE_NAME}</h3>
-                        <p style='color: {text_color}; margin-bottom: 0; font-size: 0.9em;'>{status_text}</p>
-                    </div>
-                """, unsafe_allow_html=True)
-                st.markdown("<br>", unsafe_allow_html=True)
-
-                if st.button(
-                    f"Select {case.CASE_NAME}" if case.IS_ACTIVE else f"{case.CASE_NAME} (Coming Soon)",
-                    use_container_width=True,
-                    type="primary" if case.IS_ACTIVE else "secondary",
-                    disabled=not case.IS_ACTIVE,
-                    key=f"case_button_{case.CASE_NAME}"
-                ):
-                    st.session_state.selected_case = case.CASE_NAME
-                    st.session_state.page = 'pre_brief'
-                    st.rerun()
+            render_case_card(ALL_CASES[idx], col)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -470,43 +474,7 @@ def page_case_selection():
     for idx, col in enumerate([col4, col5, col6]):
         case_idx = idx + 3
         if case_idx < len(ALL_CASES):
-            case = ALL_CASES[case_idx]
-            with col:
-                # Determine card style based on active status / กำหนดสไตล์ตามสถานะ
-                if case.IS_ACTIVE:
-                    card_bg = "white"
-                    border_color = "#4a90a4"
-                    shadow = "0 4px 12px rgba(74, 144, 164, 0.15)"
-                    title_color = "#2c5f7d"
-                    text_color = "#5a7a8a"
-                    status_text = f"✅ {case.CASE_TITLE}"
-                else:
-                    card_bg = "#f8f9fa"
-                    border_color = "#e0e0e0"
-                    shadow = "0 2px 8px rgba(0, 0, 0, 0.08)"
-                    title_color = "#9e9e9e"
-                    text_color = "#9e9e9e"
-                    status_text = "🔒 Coming Soon"
-
-                st.markdown(f"""
-                    <div style='background: {card_bg}; padding: 25px; border-radius: 16px;
-                                border: 2px solid {border_color}; box-shadow: {shadow};'>
-                        <h3 style='color: {title_color}; margin-top: 0;'>📋 {case.CASE_NAME}</h3>
-                        <p style='color: {text_color}; margin-bottom: 0; font-size: 0.9em;'>{status_text}</p>
-                    </div>
-                """, unsafe_allow_html=True)
-                st.markdown("<br>", unsafe_allow_html=True)
-
-                if st.button(
-                    f"Select {case.CASE_NAME}" if case.IS_ACTIVE else f"{case.CASE_NAME} (Coming Soon)",
-                    use_container_width=True,
-                    type="primary" if case.IS_ACTIVE else "secondary",
-                    disabled=not case.IS_ACTIVE,
-                    key=f"case_button_{case.CASE_NAME}"
-                ):
-                    st.session_state.selected_case = case.CASE_NAME
-                    st.session_state.page = 'pre_brief'
-                    st.rerun()
+            render_case_card(ALL_CASES[case_idx], col)
 
     # Back button / ปุ่มย้อนกลับ
     st.markdown("<br><br>", unsafe_allow_html=True)
@@ -573,8 +541,7 @@ def page_pre_brief():
     # Text Mode card button / ปุ่มโหมดข้อความแบบการ์ด
     with col1:
         # Apply conditional CSS class based on selection
-        is_selected = st.session_state.selected_mode == 'text'
-        css_class = "mode-card-button-selected" if is_selected else "mode-card-button"
+        css_class = "mode-card-button-selected" if st.session_state.selected_mode == 'text' else "mode-card-button"
 
         st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
         st.button(
@@ -588,8 +555,7 @@ def page_pre_brief():
     # Voice Mode card button / ปุ่มโหมดเสียงแบบการ์ด
     with col2:
         # Apply conditional CSS class based on selection
-        is_selected = st.session_state.selected_mode == 'voice'
-        css_class = "mode-card-button-selected" if is_selected else "mode-card-button"
+        css_class = "mode-card-button-selected" if st.session_state.selected_mode == 'voice' else "mode-card-button"
 
         st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
         st.button(
@@ -617,11 +583,6 @@ def page_pre_brief():
         st.session_state.start_time = datetime.now()
         st.session_state.timer_active = True
 
-    # Callback function for Back button / ฟังก์ชันสำหรับปุ่มย้อนกลับ
-    def back_to_case_selection_callback():
-        """Callback to return to case selection / กลับไปหน้าเลือกเคส"""
-        st.session_state.page = 'case_selection'
-
     # Start Case button / ปุ่มเริ่มเคส
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
@@ -637,7 +598,7 @@ def page_pre_brief():
     st.markdown("<br>", unsafe_allow_html=True)
     st.button(
         "⬅️ Back to Case Selection",
-        on_click=back_to_case_selection_callback
+        on_click=lambda: st.session_state.update({'page': 'case_selection'})
     )
 
 
@@ -699,14 +660,14 @@ def page_chat():
     # ========================================================================
 
     # Display timer using fragment (updates independently) / แสดงตัวจับเวลาด้วย fragment (อัพเดทอิสระ)
-    col1, col2, col3 = st.columns([2, 1, 1])
+    col1, col2 = st.columns([1, 1])
 
-    with col2:
+    with col1:
         # Use the fragment timer that updates every second without reloading the page
         # ใช้ fragment timer ที่อัพเดททุกวินาทีโดยไม่โหลดหน้าใหม่
         display_timer()
 
-    with col3:
+    with col2:
         if st.button("🛑 End Case", type="secondary", use_container_width=True):
             st.session_state.timer_active = False
             # Auto-save to both sheets / บันทึกอัตโนมัติไปทั้งสองชีท
