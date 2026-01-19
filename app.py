@@ -559,73 +559,35 @@ def page_pre_brief():
     # Create 2 columns for mode buttons / สร้าง 2 คอลัมน์สำหรับปุ่มโหมด
     col1, col2 = st.columns(2)
 
-    # Text Mode button / ปุ่มโหมดข้อความ
+    # Text Mode card button / ปุ่มโหมดข้อความแบบการ์ด
     with col1:
-        # Determine styling based on selection / กำหนดสไตล์ตามการเลือก
-        if st.session_state.selected_mode == 'text':
-            card_bg = "white"
-            border_color = "#4a90a4"
-            shadow = "0 4px 12px rgba(74, 144, 164, 0.15)"
-            title_color = "#2c5f7d"
-            text_color = "#5a7a8a"
-            border_width = "3px"
-        else:
-            card_bg = "white"
-            border_color = "#d0d0d0"
-            shadow = "0 2px 8px rgba(0, 0, 0, 0.08)"
-            title_color = "#6b7280"
-            text_color = "#9ca3af"
-            border_width = "2px"
+        # Apply conditional CSS class based on selection
+        is_selected = st.session_state.selected_mode == 'text'
+        css_class = "mode-card-button-selected" if is_selected else "mode-card-button"
 
-        st.markdown(f"""
-            <div style='background: {card_bg}; padding: 25px; border-radius: 16px;
-                        border: {border_width} solid {border_color}; box-shadow: {shadow};
-                        text-align: center;'>
-                <h2 style='color: {title_color}; margin: 0; font-size: 2em;'>💬</h2>
-                <h3 style='color: {title_color}; margin: 10px 0;'>Text Mode</h3>
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
         st.button(
-            "Select Text Mode",
+            "💬\n\nText Mode",
             key="btn_text_mode",
             use_container_width=True,
-            on_click=select_text_mode,
-            type="primary" if st.session_state.selected_mode == 'text' else "secondary"
+            on_click=select_text_mode
         )
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # Voice Mode button / ปุ่มโหมดเสียง
+    # Voice Mode card button / ปุ่มโหมดเสียงแบบการ์ด
     with col2:
-        # Determine styling based on selection / กำหนดสไตล์ตามการเลือก
-        if st.session_state.selected_mode == 'voice':
-            card_bg = "white"
-            border_color = "#4a90a4"
-            shadow = "0 4px 12px rgba(74, 144, 164, 0.15)"
-            title_color = "#2c5f7d"
-            text_color = "#5a7a8a"
-            border_width = "3px"
-        else:
-            card_bg = "white"
-            border_color = "#d0d0d0"
-            shadow = "0 2px 8px rgba(0, 0, 0, 0.08)"
-            title_color = "#6b7280"
-            text_color = "#9ca3af"
-            border_width = "2px"
+        # Apply conditional CSS class based on selection
+        is_selected = st.session_state.selected_mode == 'voice'
+        css_class = "mode-card-button-selected" if is_selected else "mode-card-button"
 
-        st.markdown(f"""
-            <div style='background: {card_bg}; padding: 25px; border-radius: 16px;
-                        border: {border_width} solid {border_color}; box-shadow: {shadow};
-                        text-align: center;'>
-                <h2 style='color: {title_color}; margin: 0; font-size: 2em;'>🎤</h2>
-                <h3 style='color: {title_color}; margin: 10px 0;'>Voice Mode</h3>
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f'<div class="{css_class}">', unsafe_allow_html=True)
         st.button(
-            "Select Voice Mode",
+            "🎤\n\nVoice Mode",
             key="btn_voice_mode",
             use_container_width=True,
-            on_click=select_voice_mode,
-            type="primary" if st.session_state.selected_mode == 'voice' else "secondary"
+            on_click=select_voice_mode
         )
+        st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -1109,6 +1071,45 @@ def main():
         /* Professional medical look */
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif !important;
+        }
+
+        /* Mode selection card-style buttons */
+        .mode-card-button button {
+            height: 180px !important;
+            padding: 25px !important;
+            border-radius: 16px !important;
+            font-size: 1.1em !important;
+            white-space: pre-line !important;
+            background-color: white !important;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+            border: 2px solid #d0d0d0 !important;
+            color: #6b7280 !important;
+            transition: all 0.3s ease !important;
+        }
+
+        .mode-card-button button:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12) !important;
+            transform: translateY(-2px) !important;
+        }
+
+        /* Selected mode card button */
+        .mode-card-button-selected button {
+            height: 180px !important;
+            padding: 25px !important;
+            border-radius: 16px !important;
+            font-size: 1.1em !important;
+            white-space: pre-line !important;
+            background-color: white !important;
+            box-shadow: 0 4px 12px rgba(74, 144, 164, 0.15) !important;
+            border: 3px solid #4a90a4 !important;
+            color: #2c5f7d !important;
+            font-weight: 600 !important;
+            transition: all 0.3s ease !important;
+        }
+
+        .mode-card-button-selected button:hover {
+            box-shadow: 0 6px 16px rgba(74, 144, 164, 0.25) !important;
+            transform: translateY(-2px) !important;
         }
         </style>
     """, unsafe_allow_html=True)
