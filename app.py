@@ -311,10 +311,39 @@ async def get_ai_response_async(chat_history, case_context):
 
         # Get response with temperature configuration using async API / รับคำตอบพร้อมการตั้งค่า temperature โดยใช้ API แบบ async
         response = await model.generate_content_async(full_prompt, generation_config=generation_config)
-        return response.text
+
+        # Check if response was blocked by safety settings / ตรวจสอบว่าคำตอบถูกบล็อกด้วยการตั้งค่าความปลอดภัยหรือไม่
+        if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
+            # Check if blocked / ตรวจสอบการบล็อก
+            if hasattr(response.prompt_feedback, 'block_reason'):
+                return "I apologize, but I cannot respond to that. The response was blocked by safety settings."
+
+        # Check if candidates exist / ตรวจสอบว่ามี candidates หรือไม่
+        if not response.candidates:
+            return "I'm sorry, I couldn't generate a response. Please try rephrasing your question."
+
+        # Safely extract text from response parts / แยกข้อความจาก response parts อย่างปลอดภัย
+        try:
+            # Get the first candidate's content parts / ดึง parts จาก candidate แรก
+            parts = response.candidates[0].content.parts
+
+            # Combine all text parts / รวมข้อความจากทุก part
+            text_response = ""
+            for part in parts:
+                if hasattr(part, 'text'):
+                    text_response += part.text
+
+            # Return the combined text or a fallback message / คืนข้อความที่รวมแล้วหรือข้อความสำรอง
+            if text_response.strip():
+                return text_response.strip()
+            else:
+                return "I'm sorry, I couldn't generate a proper response. Please try again."
+
+        except (IndexError, AttributeError) as e:
+            return f"I'm sorry, I had trouble processing the response. Error: {e}"
 
     except Exception as e:
-        return f"Error: {e}"
+        return f"I'm sorry, I'm having trouble responding right now. Error: {e}"
 
 
 def get_ai_response_threaded(chat_history, case_context):
@@ -432,7 +461,7 @@ def page_login():
 # PAGE 2: CASE SELECTION / HELPER FUNCTIONS
 # ============================================================================
 
-def render_case_card(case, col):
+def render_case_card(case, col, index):
     """
     Render a case selection card with styling and button
     แสดงการ์ดเลือกเคสพร้อมสไตล์และปุ่ม
@@ -440,6 +469,7 @@ def render_case_card(case, col):
     Args:
         case: Case configuration object / ข้อมูลเคส
         col: Streamlit column object / คอลัมน์สำหรับแสดงผล
+        index: Unique index for the case / ดัชนีไม่ซ้ำสำหรับเคส
     """
     with col:
         # Determine card style based on active status / กำหนดสไตล์ตามสถานะ
@@ -472,7 +502,7 @@ def render_case_card(case, col):
             use_container_width=True,
             type="primary" if case.IS_ACTIVE else "secondary",
             disabled=not case.IS_ACTIVE,
-            key=f"case_button_{case.CASE_NAME}"
+            key=f"case_button_{case.CASE_NAME}_{index}"
         ):
             st.session_state.selected_case = case.CASE_NAME
             st.session_state.page = 'pre_brief'
@@ -495,7 +525,7 @@ def page_case_selection():
 
     for idx, col in enumerate([col1, col2, col3]):
         if idx < len(ALL_CASES):
-            render_case_card(ALL_CASES[idx], col)
+            render_case_card(ALL_CASES[idx], col, idx)
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -505,7 +535,7 @@ def page_case_selection():
     for idx, col in enumerate([col4, col5, col6]):
         case_idx = idx + 3
         if case_idx < len(ALL_CASES):
-            render_case_card(ALL_CASES[case_idx], col)
+            render_case_card(ALL_CASES[case_idx], col, case_idx)
 
     # Back button / ปุ่มย้อนกลับ
     st.markdown("<br><br>", unsafe_allow_html=True)
