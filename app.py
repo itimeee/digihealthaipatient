@@ -10,6 +10,7 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 import asyncio
 import threading
+from streamlit.runtime.scriptrunner import add_script_run_ctx
 
 # Import case configurations / นำเข้าการตั้งค่าเคส
 from cases import ALL_CASES, get_case_by_name
@@ -788,8 +789,7 @@ def page_chat():
         # ใช้ st.chat_input เพื่อสร้างแถบแชทที่ปักหมุดไว้ด้านล่าง
         if prompt := st.chat_input(
             placeholder="Type your question or response here..." if not st.session_state.ai_responding else "Please wait for patient's response...",
-            key="chat_input",
-            disabled=st.session_state.ai_responding
+            key="chat_input"
         ):
             # 1. Append user message to history immediately
             # เพิ่มข้อความผู้ใช้ในประวัติทันที
@@ -812,8 +812,9 @@ def page_chat():
                 st.session_state.pending_ai_response = response
                 st.session_state.ai_response_ready = True
 
-            # 4. Start background thread / เริ่มเธรดพื้นหลัง
+            # 4. Start background thread with Streamlit context / เริ่มเธรดพื้นหลังพร้อม Streamlit context
             thread = threading.Thread(target=ai_response_callback, daemon=True)
+            add_script_run_ctx(thread)  # Attach Streamlit context to thread
             thread.start()
 
             # 5. Rerun to show loading state / รีรันเพื่อแสดงสถานะโหลด
