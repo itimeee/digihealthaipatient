@@ -9,6 +9,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 import asyncio
+import threading
 
 # Import case configurations / นำเข้าการตั้งค่าเคส
 from cases import ALL_CASES, get_case_by_name
@@ -268,7 +269,7 @@ def get_gemini_model(model_name=None):
         return None
 
 
-async def get_ai_response(chat_history, case_context):
+async def get_ai_response_async(chat_history, case_context):
     """
     Get response from Gemini AI using case-specific configuration (async)
     รับคำตอบจาก Gemini AI โดยใช้การตั้งค่าเฉพาะของเคส (แบบ async)
@@ -312,8 +313,27 @@ async def get_ai_response(chat_history, case_context):
         return response.text
 
     except Exception as e:
-        st.error(f"Error getting AI response: {e}")
-        return "I'm sorry, I'm having trouble responding right now."
+        return f"Error: {e}"
+
+
+def get_ai_response_threaded(chat_history, case_context):
+    """
+    Wrapper function to run async AI response in a thread-safe way
+    ฟังก์ชันห่อหุ้มเพื่อเรียก AI แบบ async ในเธรดแยก
+
+    This allows the timer fragment to continue updating while waiting for AI response
+    ทำให้ตัวจับเวลายังคงอัพเดทต่อได้ขณะรอคำตอบจาก AI
+    """
+    try:
+        # Run the async function in a new event loop
+        # รันฟังก์ชัน async ใน event loop ใหม่
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(get_ai_response_async(chat_history, case_context))
+        loop.close()
+        return result
+    except Exception as e:
+        return f"I'm sorry, I'm having trouble responding right now. Error: {e}"
 
 
 # ============================================================================
@@ -345,6 +365,15 @@ def initialize_session_state():
 
     if 'timer_active' not in st.session_state:
         st.session_state.timer_active = False
+
+    if 'ai_responding' not in st.session_state:
+        st.session_state.ai_responding = False
+
+    if 'ai_response_ready' not in st.session_state:
+        st.session_state.ai_response_ready = False
+
+    if 'pending_ai_response' not in st.session_state:
+        st.session_state.pending_ai_response = None
 
 
 # ============================================================================
@@ -623,6 +652,20 @@ def display_timer():
     Timer fragment that updates independently without reloading the page
     ส่วนแสดงตัวจับเวลาที่อัพเดทอิสระโดยไม่โหลดหน้าใหม่
     """
+    # Check if AI response is ready (polling mechanism) / ตรวจสอบว่า AI ตอบเสร็จแล้วหรือยัง
+    if st.session_state.ai_response_ready and st.session_state.pending_ai_response:
+        # Append AI response to history / เพิ่มคำตอบ AI ในประวัติ
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": st.session_state.pending_ai_response
+        })
+        # Reset flags / รีเซ็ตสถานะ
+        st.session_state.ai_responding = False
+        st.session_state.ai_response_ready = False
+        st.session_state.pending_ai_response = None
+        # Trigger rerun to show the response / รีรันเพื่อแสดงคำตอบ
+        st.rerun()
+
     # Calculate remaining time / คำนวณเวลาที่เหลือ
     if st.session_state.timer_active and st.session_state.start_time:
         elapsed = datetime.now() - st.session_state.start_time
@@ -726,13 +769,27 @@ def page_chat():
     # CHAT INPUT - Using native st.chat_input / ใช้ st.chat_input แบบ native
     # ========================================================================
 
+    # Show loading indicator if AI is responding / แสดงสถานะโหลดถ้า AI กำลังตอบ
+    if st.session_state.ai_responding:
+        st.markdown("""
+            <div style='text-align: center; padding: 20px;'>
+                <div style='display: inline-block; padding: 15px 30px; background: linear-gradient(135deg, #e3f2fd 0%, #f0f8fb 100%);
+                            border-radius: 12px; border: 2px solid #4a90a4;'>
+                    <span style='color: #2c5f7d; font-weight: 600; font-size: 1.1em;'>
+                        🤔 Patient is thinking and responding...
+                    </span>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
     # Check if timer is still active / ตรวจสอบว่าตัวจับเวลายังทำงานอยู่หรือไม่
     if st.session_state.timer_active:
         # Use st.chat_input for a pinned chat bar at the bottom
         # ใช้ st.chat_input เพื่อสร้างแถบแชทที่ปักหมุดไว้ด้านล่าง
         if prompt := st.chat_input(
-            placeholder="Type your question or response here...",
-            key="chat_input"
+            placeholder="Type your question or response here..." if not st.session_state.ai_responding else "Please wait for patient's response...",
+            key="chat_input",
+            disabled=st.session_state.ai_responding
         ):
             # 1. Append user message to history immediately
             # เพิ่มข้อความผู้ใช้ในประวัติทันที
@@ -741,34 +798,25 @@ def page_chat():
                 "content": prompt
             })
 
-            # 2. IMMEDIATELY render the user's message bubble (before rerun)
-            # แสดงข้อความผู้ใช้ทันที (ก่อน rerun)
-            st.markdown(
-                f"<div style='text-align: right; background: linear-gradient(135deg, #4a90a4 0%, #5ba3b8 100%); "
-                f"color: white; padding: 12px 16px; border-radius: 18px 18px 4px 18px; "
-                f"margin: 8px 0; box-shadow: 0 2px 4px rgba(74, 144, 164, 0.2); max-width: 80%; "
-                f"margin-left: auto;'>"
-                f"<b style='color: #e3f2fd;'>You:</b> {prompt}</div>",
-                unsafe_allow_html=True
-            )
+            # 2. Set AI responding flag / ตั้งสถานะว่า AI กำลังตอบ
+            st.session_state.ai_responding = True
 
-            # 3. Show spinner and get AI response (async)
-            # แสดง spinner และรับคำตอบจาก AI (แบบ async)
-            with st.spinner("Patient is responding... / ผู้ป่วยกำลังตอบ..."):
-                ai_response = asyncio.run(get_ai_response(
+            # 3. Define callback function for thread / กำหนดฟังก์ชันสำหรับเธรด
+            def ai_response_callback():
+                """Background thread function to get AI response"""
+                response = get_ai_response_threaded(
                     st.session_state.chat_history,
                     st.session_state.case_context
-                ))
+                )
+                # Store response and set ready flag / เก็บคำตอบและตั้งสถานะพร้อม
+                st.session_state.pending_ai_response = response
+                st.session_state.ai_response_ready = True
 
-            # 4. Append AI response to history
-            # เพิ่มคำตอบ AI ในประวัติ
-            st.session_state.chat_history.append({
-                "role": "assistant",
-                "content": ai_response
-            })
+            # 4. Start background thread / เริ่มเธรดพื้นหลัง
+            thread = threading.Thread(target=ai_response_callback, daemon=True)
+            thread.start()
 
-            # 5. Rerun to refresh the full view
-            # รีรันเพื่อรีเฟรชทั้งหมด
+            # 5. Rerun to show loading state / รีรันเพื่อแสดงสถานะโหลด
             st.rerun()
     else:
         # Timer ended, disable input / หมดเวลาแล้ว ปิดการพิมพ์
