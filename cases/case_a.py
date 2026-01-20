@@ -4,7 +4,7 @@ Case A
 
 # Case Configuration / การตั้งค่าเคส
 CASE_NAME = "Case A"
-CASE_TITLE = "Flash 3"
+CASE_TITLE = "3 Flash"
 MODEL_NAME = "gemini-3-flash-preview"  # AI model for this case
 TEMPERATURE = 0.3  # Temperature for API calls (0.0-1.0, lower = more focused/consistent)
 IS_ACTIVE = True  # Whether this case is available
