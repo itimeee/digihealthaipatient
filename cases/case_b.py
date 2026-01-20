@@ -3,7 +3,7 @@ Case B
 """
 
 # Case Configuration / การตั้งค่าเคส
-CASE_NAME = "Case A"
+CASE_NAME = "Case B"
 CASE_TITLE = "2.5 Flash Lite"
 MODEL_NAME = "gemini-2.5-flash-lite"  # AI model for this case
 TEMPERATURE = 0.3  # Temperature for API calls (0.0-1.0, lower = more focused/consistent)
