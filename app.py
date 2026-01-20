@@ -8,6 +8,7 @@ import google.generativeai as genai
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
+import asyncio
 
 # Import case configurations / นำเข้าการตั้งค่าเคส
 from cases import ALL_CASES, get_case_by_name
@@ -267,10 +268,10 @@ def get_gemini_model(model_name=None):
         return None
 
 
-def get_ai_response(chat_history, case_context):
+async def get_ai_response(chat_history, case_context):
     """
-    Get response from Gemini AI using case-specific configuration
-    รับคำตอบจาก Gemini AI โดยใช้การตั้งค่าเฉพาะของเคส
+    Get response from Gemini AI using case-specific configuration (async)
+    รับคำตอบจาก Gemini AI โดยใช้การตั้งค่าเฉพาะของเคส (แบบ async)
 
     Args:
         chat_history: List of previous messages / ประวัติการสนทนา
@@ -306,8 +307,8 @@ def get_ai_response(chat_history, case_context):
             "temperature": case_temperature,
         }
 
-        # Get response with temperature configuration / รับคำตอบพร้อมการตั้งค่า temperature
-        response = model.generate_content(full_prompt, generation_config=generation_config)
+        # Get response with temperature configuration using async API / รับคำตอบพร้อมการตั้งค่า temperature โดยใช้ API แบบ async
+        response = await model.generate_content_async(full_prompt, generation_config=generation_config)
         return response.text
 
     except Exception as e:
@@ -751,13 +752,13 @@ def page_chat():
                 unsafe_allow_html=True
             )
 
-            # 3. Show spinner and get AI response
-            # แสดง spinner และรับคำตอบจาก AI
+            # 3. Show spinner and get AI response (async)
+            # แสดง spinner และรับคำตอบจาก AI (แบบ async)
             with st.spinner("Patient is responding... / ผู้ป่วยกำลังตอบ..."):
-                ai_response = get_ai_response(
+                ai_response = asyncio.run(get_ai_response(
                     st.session_state.chat_history,
                     st.session_state.case_context
-                )
+                ))
 
             # 4. Append AI response to history
             # เพิ่มคำตอบ AI ในประวัติ
