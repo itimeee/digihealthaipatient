@@ -4,6 +4,7 @@ DigiHealth AI Patient - Psychiatric Training Application
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import google.generativeai as genai
 import gspread
 from google.oauth2.service_account import Credentials
@@ -316,30 +317,48 @@ async def get_ai_response_async(chat_history, case_context):
         if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
             # Check if blocked / ตรวจสอบการบล็อก
             if hasattr(response.prompt_feedback, 'block_reason'):
+                print(f"[DEBUG] Response blocked by safety settings: {response.prompt_feedback}")
                 return "I apologize, but I cannot respond to that. The response was blocked by safety settings."
 
         # Check if candidates exist / ตรวจสอบว่ามี candidates หรือไม่
         if not response.candidates:
+            print(f"[DEBUG] No candidates in response. Raw response: {response}")
             return "I'm sorry, I couldn't generate a response. Please try rephrasing your question."
 
-        # Safely extract text from response parts / แยกข้อความจาก response parts อย่างปลอดภัย
+        # Robust text extraction with multiple fallback strategies / แยกข้อความแบบหลายขั้นตอน
+        text_response = ""
+
+        # Strategy 1: Try the convenient .text property first / ลองใช้ .text ก่อน
         try:
-            # Get the first candidate's content parts / ดึง parts จาก candidate แรก
+            text_response = response.text
+            if text_response and text_response.strip():
+                return text_response.strip()
+        except (ValueError, AttributeError) as e:
+            print(f"[DEBUG] response.text failed: {e}, falling back to parts extraction")
+
+        # Strategy 2: Extract from parts manually / ถ้า .text ไม่ได้ ให้แยกจาก parts
+        try:
             parts = response.candidates[0].content.parts
 
             # Combine all text parts / รวมข้อความจากทุก part
-            text_response = ""
             for part in parts:
-                if hasattr(part, 'text'):
+                if hasattr(part, 'text') and part.text:
                     text_response += part.text
 
             # Return the combined text or a fallback message / คืนข้อความที่รวมแล้วหรือข้อความสำรอง
             if text_response.strip():
                 return text_response.strip()
             else:
+                # Log the full response for debugging / บันทึกข้อมูลเพื่อดีบัก
+                print(f"[DEBUG] Text extraction failed. Raw response structure:")
+                print(f"  - Candidates: {len(response.candidates)}")
+                print(f"  - First candidate parts: {response.candidates[0].content.parts}")
+                print(f"  - Full response: {response}")
                 return "I'm sorry, I couldn't generate a proper response. Please try again."
 
         except (IndexError, AttributeError) as e:
+            print(f"[DEBUG] Parts extraction failed: {e}")
+            print(f"[DEBUG] Raw response: {response}")
             return f"I'm sorry, I had trouble processing the response. Error: {e}"
 
     except Exception as e:
@@ -728,11 +747,36 @@ def page_chat():
     Main chat interface with timer
     หน้าสนทนากับ AI พร้อมตัวจับเวลา
     """
+    # Inject CSS for sticky header / เพิ่ม CSS สำหรับ header แบบ sticky
+    st.markdown("""
+        <style>
+        /* Sticky header container for timer and end button */
+        .sticky-header {
+            position: sticky;
+            top: 0;
+            z-index: 999;
+            background: linear-gradient(135deg, #f8fbff 0%, #e8f4f8 100%);
+            padding: 15px 0;
+            margin: -1rem -1rem 1rem -1rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border-bottom: 2px solid #4a90a4;
+        }
+
+        /* Ensure proper spacing for content below sticky header */
+        .main-content {
+            margin-top: 20px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     st.title("Interview Simulation / การฝึกซ้อมสัมภาษณ์")
 
     # ========================================================================
-    # TIMER SECTION / ส่วนตัวจับเวลา
+    # STICKY TIMER SECTION / ส่วนตัวจับเวลาแบบ sticky
     # ========================================================================
+
+    # Sticky header wrapper / ห่อหุ้มด้วย sticky header
+    st.markdown('<div class="sticky-header">', unsafe_allow_html=True)
 
     # Display timer using fragment (updates independently) / แสดงตัวจับเวลาด้วย fragment (อัพเดทอิสระ)
     col1, col2 = st.columns([1, 1])
@@ -743,7 +787,7 @@ def page_chat():
         display_timer()
 
     with col2:
-        if st.button("🛑 End Case", type="secondary", use_container_width=True):
+        if st.button("🛑 End Case", type="secondary", use_container_width=True, key="end_case_button"):
             st.session_state.timer_active = False
             # Auto-save to both sheets / บันทึกอัตโนมัติไปทั้งสองชีท
             with st.spinner("Saving session data... / กำลังบันทึกข้อมูล..."):
@@ -763,6 +807,8 @@ def page_chat():
                 )
             st.session_state.page = 'end'
             st.rerun()
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     st.divider()
 
@@ -852,6 +898,56 @@ def page_chat():
     else:
         # Timer ended, disable input / หมดเวลาแล้ว ปิดการพิมพ์
         st.warning("⏰ Time's up! Please end the case.")
+
+    # ========================================================================
+    # AUTO-FOCUS CHAT INPUT / โฟกัสช่องแชทอัตโนมัติ
+    # ========================================================================
+
+    # Inject JavaScript to auto-focus the chat input after each rerun
+    # เพิ่ม JavaScript เพื่อโฟกัสช่องแชทหลังจากทุกครั้งที่รีรัน
+    components.html(
+        """
+        <script>
+        // Function to focus chat input / ฟังก์ชันโฟกัสช่องแชท
+        function focusChatInput() {
+            try {
+                // Access parent document (Streamlit iframe container)
+                const parentDoc = window.parent.document;
+
+                // Find the chat input textarea
+                // Try multiple selectors to ensure compatibility
+                let chatInput = parentDoc.querySelector('textarea[aria-label="Chat input"]') ||
+                               parentDoc.querySelector('textarea[data-testid="stChatInput"]') ||
+                               parentDoc.querySelector('textarea[placeholder*="Type your question"]') ||
+                               parentDoc.querySelector('.stChatInput textarea');
+
+                if (chatInput) {
+                    // Focus the input with a slight delay to ensure DOM is ready
+                    setTimeout(() => {
+                        chatInput.focus();
+                        // Also scroll to bottom if needed
+                        chatInput.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }, 100);
+                }
+            } catch (error) {
+                console.log('Could not auto-focus chat input:', error);
+            }
+        }
+
+        // Execute on load / รันเมื่อโหลด
+        if (document.readyState === 'complete') {
+            focusChatInput();
+        } else {
+            window.addEventListener('load', focusChatInput);
+        }
+
+        // Also try after a short delay to catch late renders
+        setTimeout(focusChatInput, 200);
+        setTimeout(focusChatInput, 500);
+        </script>
+        """,
+        height=0,  # Hidden component / ซ่อนคอมโพเนนต์
+    )
 
 
 # ============================================================================
