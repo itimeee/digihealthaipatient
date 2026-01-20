@@ -1,11 +1,10 @@
 """
-Case A: Depression
-Major Depressive Disorder - Software Developer
+Case A
 """
 
 # Case Configuration / การตั้งค่าเคส
 CASE_NAME = "Case A"
-CASE_TITLE = "Depression - Young Professional"
+CASE_TITLE = "Flash 3"
 MODEL_NAME = "gemini-3-flash-preview"  # AI model for this case
 TEMPERATURE = 0.3  # Temperature for API calls (0.0-1.0, lower = more focused/consistent)
 IS_ACTIVE = True  # Whether this case is available
