@@ -744,39 +744,14 @@ def display_timer():
 
 def page_chat():
     """
-    Main chat interface with timer
-    หน้าสนทนากับ AI พร้อมตัวจับเวลา
+    Main chat interface with timer and scrollable chat area
+    หน้าสนทนากับ AI พร้อมตัวจับเวลาและพื้นที่แชทแบบเลื่อนได้
     """
-    # Inject CSS for sticky header / เพิ่ม CSS สำหรับ header แบบ sticky
-    st.markdown("""
-        <style>
-        /* Sticky header container for timer and end button */
-        .sticky-header {
-            position: sticky;
-            top: 0;
-            z-index: 999;
-            background: linear-gradient(135deg, #f8fbff 0%, #e8f4f8 100%);
-            padding: 15px 0;
-            margin: -1rem -1rem 1rem -1rem;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-            border-bottom: 2px solid #4a90a4;
-        }
-
-        /* Ensure proper spacing for content below sticky header */
-        .main-content {
-            margin-top: 20px;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
     st.title("Interview Simulation / การฝึกซ้อมสัมภาษณ์")
 
     # ========================================================================
-    # STICKY TIMER SECTION / ส่วนตัวจับเวลาแบบ sticky
+    # TIMER SECTION (FIXED AT TOP) / ส่วนตัวจับเวลา (อยู่ด้านบนแบบคงที่)
     # ========================================================================
-
-    # Sticky header wrapper / ห่อหุ้มด้วย sticky header
-    st.markdown('<div class="sticky-header">', unsafe_allow_html=True)
 
     # Display timer using fragment (updates independently) / แสดงตัวจับเวลาด้วย fragment (อัพเดทอิสระ)
     col1, col2 = st.columns([1, 1])
@@ -808,39 +783,39 @@ def page_chat():
             st.session_state.page = 'end'
             st.rerun()
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
     st.divider()
 
     # ========================================================================
-    # CHAT INTERFACE / ส่วนการสนทนา
+    # SCROLLABLE CHAT AREA / พื้นที่แชทแบบเลื่อนได้
     # ========================================================================
 
-    # Display chat history / แสดงประวัติการสนทนา
-    if len(st.session_state.chat_history) == 0:
-        st.info("👋 Start the conversation by greeting the patient.")
+    # Use Streamlit's native scrollable container / ใช้คอนเทนเนอร์แบบเลื่อนได้ของ Streamlit
+    with st.container(height=500):
+        # Display chat history / แสดงประวัติการสนทนา
+        if len(st.session_state.chat_history) == 0:
+            st.info("👋 Start the conversation by greeting the patient.")
 
-    for message in st.session_state.chat_history:
-        if message["role"] == "user":
-            # Doctor's message (right side) / ข้อความของแพทย์ (ขวา)
-            st.markdown(
-                f"<div style='text-align: right; background: linear-gradient(135deg, #4a90a4 0%, #5ba3b8 100%); "
-                f"color: white; padding: 12px 16px; border-radius: 18px 18px 4px 18px; "
-                f"margin: 8px 0; box-shadow: 0 2px 4px rgba(74, 144, 164, 0.2); max-width: 80%; "
-                f"margin-left: auto;'>"
-                f"<b style='color: #e3f2fd;'>You:</b> {message['content']}</div>",
-                unsafe_allow_html=True
-            )
-        else:
-            # AI Patient's message (left side) / ข้อความของผู้ป่วย AI (ซ้าย)
-            st.markdown(
-                f"<div style='text-align: left; background-color: white; padding: 12px 16px; "
-                f"border-radius: 18px 18px 18px 4px; margin: 8px 0; "
-                f"border: 2px solid #e3f2fd; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08); "
-                f"max-width: 80%; color: #37474f;'>"
-                f"<b style='color: #2c5f7d;'>Patient:</b> {message['content']}</div>",
-                unsafe_allow_html=True
-            )
+        for message in st.session_state.chat_history:
+            if message["role"] == "user":
+                # Doctor's message (right side) / ข้อความของแพทย์ (ขวา)
+                st.markdown(
+                    f"<div style='text-align: right; background: linear-gradient(135deg, #4a90a4 0%, #5ba3b8 100%); "
+                    f"color: white; padding: 12px 16px; border-radius: 18px 18px 4px 18px; "
+                    f"margin: 8px 0; box-shadow: 0 2px 4px rgba(74, 144, 164, 0.2); max-width: 80%; "
+                    f"margin-left: auto;'>"
+                    f"<b style='color: #e3f2fd;'>You:</b> {message['content']}</div>",
+                    unsafe_allow_html=True
+                )
+            else:
+                # AI Patient's message (left side) / ข้อความของผู้ป่วย AI (ซ้าย)
+                st.markdown(
+                    f"<div style='text-align: left; background-color: white; padding: 12px 16px; "
+                    f"border-radius: 18px 18px 18px 4px; margin: 8px 0; "
+                    f"border: 2px solid #e3f2fd; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08); "
+                    f"max-width: 80%; color: #37474f;'>"
+                    f"<b style='color: #2c5f7d;'>Patient:</b> {message['content']}</div>",
+                    unsafe_allow_html=True
+                )
 
     # ========================================================================
     # CHAT INPUT - Using native st.chat_input / ใช้ st.chat_input แบบ native
