@@ -12,7 +12,7 @@ IS_ACTIVE = True  # Whether this case is available
 # Case Information / ข้อมูลเคส
 # This will be displayed on the pre-brief page
 CASE_INFORMATION = """
-คุณส้มมาพบคุณครั้งแรกที่ OPD
+คุณส้ม อายุ 23 ปี มาพบคุณครั้งแรกที่ OPD
 """
 
 # System Prompt / คำสั่งระบบสำหรับ AI
