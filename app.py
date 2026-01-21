@@ -748,6 +748,44 @@ def page_chat():
     หน้าสนทนากับ AI พร้อมตัวจับเวลาและปุ่มจบด้านล่าง
     """
     # ========================================================================
+    # INJECT CSS FOR LIGHT MODE ENFORCEMENT / บังคับโหมดสว่าง
+    # ========================================================================
+
+    st.markdown("""
+        <style>
+        /* Force Light Mode Overrides - Prevent dark mode flash */
+        :root {
+            --primary-color: #4a90a4;
+            --background-color: #f8fbff;
+            --secondary-background-color: #e8f4f8;
+            --text-color: #2c3e50;
+            --font: sans-serif;
+        }
+
+        /* Force background on the main app container to prevent dark mode leak */
+        .stApp {
+            background: linear-gradient(135deg, #f8fbff 0%, #e8f4f8 100%) !important;
+            color: #2c3e50 !important;
+        }
+
+        /* Ensure all text is dark (to be visible on light background) */
+        p, h1, h2, h3, h4, h5, h6, span, div {
+            color: #2c3e50 !important;
+        }
+
+        /* Fix specific components that might revert to dark mode */
+        .stMarkdown, .stButton, .stSpinner {
+            color-scheme: light !important;
+        }
+
+        /* Ensure spinner background stays light */
+        .stSpinner > div {
+            background-color: transparent !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # ========================================================================
     # TITLE SECTION / ส่วนหัวเรื่อง
     # ========================================================================
 
@@ -782,6 +820,19 @@ def page_chat():
                 f"<b style='color: #2c5f7d;'>Patient:</b> {message['content']}</div>",
                 unsafe_allow_html=True
             )
+
+    # ========================================================================
+    # CONDITIONAL SPACER (Push controls to bottom when chat is empty)
+    # ส่วนเว้นระยะแบบมีเงื่อนไข (ดันปุ่มควบคุมลงด้านล่างเมื่อแชทว่าง)
+    # ========================================================================
+
+    if len(st.session_state.chat_history) == 0:
+        # Add spacer to push timer/button to bottom when chat is empty
+        # เพิ่มช่องว่างเพื่อดันตัวจับเวลา/ปุ่มลงด้านล่างเมื่อแชทว่าง
+        st.markdown(
+            '<div style="height: 60vh;"></div>',
+            unsafe_allow_html=True
+        )
 
     # ========================================================================
     # FOOTER: TIMER & END BUTTON (BOTTOM) / ส่วนท้าย: ตัวจับเวลาและปุ่มจบ (ด้านล่าง)
