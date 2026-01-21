@@ -822,6 +822,23 @@ def page_chat():
             )
 
     # ========================================================================
+    # LOADING INDICATOR (Inside chat flow) / ตัวบอกสถานะโหลด (ในกระแสแชท)
+    # ========================================================================
+
+    # Show loading indicator if AI is responding / แสดงสถานะโหลดถ้า AI กำลังตอบ
+    if st.session_state.ai_responding:
+        st.markdown("""
+            <div style='text-align: center; padding: 20px;'>
+                <div style='display: inline-block; padding: 15px 30px; background: linear-gradient(135deg, #e3f2fd 0%, #f0f8fb 100%);
+                            border-radius: 12px; border: 2px solid #4a90a4;'>
+                    <span style='color: #2c5f7d; font-weight: 600; font-size: 1.1em;'>
+                        🤔 Patient is thinking and responding...
+                    </span>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    # ========================================================================
     # DYNAMIC SPACER (Stable DOM for fragment) / ส่วนเว้นระยะแบบไดนามิก (DOM เสถียรสำหรับ fragment)
     # ========================================================================
 
@@ -875,19 +892,6 @@ def page_chat():
     # ========================================================================
     # CHAT INPUT - Using native st.chat_input / ใช้ st.chat_input แบบ native
     # ========================================================================
-
-    # Show loading indicator if AI is responding / แสดงสถานะโหลดถ้า AI กำลังตอบ
-    if st.session_state.ai_responding:
-        st.markdown("""
-            <div style='text-align: center; padding: 20px;'>
-                <div style='display: inline-block; padding: 15px 30px; background: linear-gradient(135deg, #e3f2fd 0%, #f0f8fb 100%);
-                            border-radius: 12px; border: 2px solid #4a90a4;'>
-                    <span style='color: #2c5f7d; font-weight: 600; font-size: 1.1em;'>
-                        🤔 Patient is thinking and responding...
-                    </span>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
 
     # Check if timer is still active / ตรวจสอบว่าตัวจับเวลายังทำงานอยู่หรือไม่
     if st.session_state.timer_active:
