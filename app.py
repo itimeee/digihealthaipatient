@@ -822,21 +822,31 @@ def page_chat():
             )
 
     # ========================================================================
-    # LOADING INDICATOR (Inside chat flow) / ตัวบอกสถานะโหลด (ในกระแสแชท)
+    # LOADING INDICATOR (Stable placeholder) / ตัวบอกสถานะโหลด (ตัวยึดตำแหน่งเสถียร)
     # ========================================================================
 
-    # Show loading indicator if AI is responding / แสดงสถานะโหลดถ้า AI กำลังตอบ
+    # Create a permanent placeholder for the loading indicator
+    # This ensures the element tree structure never changes, preventing Fragment crashes.
+    # สร้างตัวยึดตำแหน่งถาวรสำหรับตัวบอกสถานะโหลด
+    # เพื่อให้โครงสร้างต้นไม้ของ element ไม่เปลี่ยนแปลง ป้องกันการ crash ของ Fragment
+    thinking_placeholder = st.empty()
+
     if st.session_state.ai_responding:
-        st.markdown("""
-            <div style='text-align: center; padding: 20px;'>
-                <div style='display: inline-block; padding: 15px 30px; background: linear-gradient(135deg, #e3f2fd 0%, #f0f8fb 100%);
-                            border-radius: 12px; border: 2px solid #4a90a4;'>
-                    <span style='color: #2c5f7d; font-weight: 600; font-size: 1.1em;'>
-                        🤔 Patient is thinking and responding...
-                    </span>
+        # Render the content inside the placeholder / แสดงเนื้อหาภายในตัวยึดตำแหน่ง
+        with thinking_placeholder.container():
+            st.markdown("""
+                <div style='text-align: center; padding: 20px;'>
+                    <div style='display: inline-block; padding: 15px 30px; background: linear-gradient(135deg, #e3f2fd 0%, #f0f8fb 100%);
+                                border-radius: 12px; border: 2px solid #4a90a4;'>
+                        <span style='color: #2c5f7d; font-weight: 600; font-size: 1.1em;'>
+                            🤔 Patient is thinking and responding...
+                        </span>
+                    </div>
                 </div>
-            </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
+    else:
+        # IMPORTANT: Clear it but keep the placeholder alive / เคลียร์แต่เก็บตัวยึดตำแหน่งไว้
+        thinking_placeholder.empty()
 
     # ========================================================================
     # DYNAMIC SPACER (Stable DOM for fragment) / ส่วนเว้นระยะแบบไดนามิก (DOM เสถียรสำหรับ fragment)
