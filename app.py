@@ -822,17 +822,19 @@ def page_chat():
             )
 
     # ========================================================================
-    # CONDITIONAL SPACER (Push controls to bottom when chat is empty)
-    # ส่วนเว้นระยะแบบมีเงื่อนไข (ดันปุ่มควบคุมลงด้านล่างเมื่อแชทว่าง)
+    # DYNAMIC SPACER (Stable DOM for fragment) / ส่วนเว้นระยะแบบไดนามิก (DOM เสถียรสำหรับ fragment)
     # ========================================================================
 
-    if len(st.session_state.chat_history) == 0:
-        # Add spacer to push timer/button to bottom when chat is empty
-        # เพิ่มช่องว่างเพื่อดันตัวจับเวลา/ปุ่มลงด้านล่างเมื่อแชทว่าง
-        st.markdown(
-            '<div style="height: 60vh;"></div>',
-            unsafe_allow_html=True
-        )
+    # Calculate spacer height: 30vh if empty, 0px if chatting
+    # คำนวณความสูงช่องว่าง: 30vh ถ้าว่าง, 0px ถ้ามีข้อความ
+    spacer_height = "30vh" if len(st.session_state.chat_history) == 0 else "0px"
+
+    # Always render this div so the DOM structure remains stable for the fragment
+    # แสดง div นี้เสมอเพื่อให้โครงสร้าง DOM คงที่สำหรับ fragment
+    st.markdown(
+        f'<div style="height: {spacer_height}; transition: height 0.3s ease;"></div>',
+        unsafe_allow_html=True
+    )
 
     # ========================================================================
     # FOOTER: TIMER & END BUTTON (BOTTOM) / ส่วนท้าย: ตัวจับเวลาและปุ่มจบ (ด้านล่าง)
