@@ -20,6 +20,7 @@ from cases import ALL_CASES, get_case_by_name
 # CONFIGURATION / การตั้งค่า
 # ============================================================================
 # You can easily change these values / คุณสามารถแก้ไขค่าเหล่านี้ได้ง่าย ๆ
+
 # Timer Duration (in minutes) / ระยะเวลาจับเวลา (นาที)
 TIMER_DURATION_MINUTES = 30
 
@@ -275,8 +276,9 @@ async def get_ai_response_async(chat_history, case_context):
     """
     try:
         # Get case-specific model, prompt, and temperature from session state / ดึงโมเดล prompt และ temperature เฉพาะของเคส
-        case_model = st.session_state.get('case_model', MODEL_NAME)
-        case_prompt = st.session_state.get('case_system_prompt', SYSTEM_PROMPT)
+        # These are set in pre_brief page from the selected case configuration / ค่าเหล่านี้ถูกตั้งในหน้า pre_brief จากการตั้งค่าเคสที่เลือก
+        case_model = st.session_state.get('case_model', 'gemini-2.0-flash-exp')
+        case_prompt = st.session_state.get('case_system_prompt', 'You are a patient in a psychiatric clinic.')
         case_temperature = st.session_state.get('case_temperature', 0.3)
 
         # Get cached model with case-specific model name / ดึงโมเดลที่แคชไว้ตามชื่อของเคส
