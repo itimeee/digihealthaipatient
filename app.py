@@ -748,47 +748,81 @@ def page_chat():
     หน้าสนทนากับ AI พร้อมตัวจับเวลาและพื้นที่แชทแบบเลื่อนได้
     """
     # ========================================================================
-    # HEADER SECTION (ALWAYS VISIBLE AT TOP) / ส่วนหัว (มองเห็นได้เสมอด้านบน)
+    # INJECT CSS FOR FIXED HEADER / เพิ่ม CSS สำหรับ header แบบ fixed
     # ========================================================================
 
-    # Create header container to group title, timer, and end button
-    # สร้างคอนเทนเนอร์หัวเพื่อจัดกลุ่มชื่อ ตัวจับเวลา และปุ่มจบ
-    header_container = st.container()
+    st.markdown("""
+        <style>
+        /* Fixed header that stays at top of viewport */
+        .fixed-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            z-index: 9999;
+            background: linear-gradient(135deg, #f8fbff 0%, #e8f4f8 100%);
+            padding: 1rem 2rem;
+            border-bottom: 2px solid #4a90a4;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
 
-    with header_container:
-        st.title("Interview Simulation / การฝึกซ้อมสัมภาษณ์")
+        /* Add padding to main content so it doesn't hide behind fixed header */
+        .block-container {
+            padding-top: 220px !important;
+        }
 
-        # Display timer using fragment (updates independently) / แสดงตัวจับเวลาด้วย fragment (อัพเดทอิสระ)
-        col1, col2 = st.columns([1, 1])
+        /* Ensure proper width handling */
+        .fixed-header .stMarkdown,
+        .fixed-header .stButton,
+        .fixed-header .stColumns {
+            max-width: 100%;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
-        with col1:
-            # Use the fragment timer that updates every second without reloading the page
-            # ใช้ fragment timer ที่อัพเดททุกวินาทีโดยไม่โหลดหน้าใหม่
-            display_timer()
+    # ========================================================================
+    # FIXED HEADER SECTION / ส่วนหัวแบบ fixed
+    # ========================================================================
 
-        with col2:
-            if st.button("🛑 End Case", type="secondary", use_container_width=True, key="end_case_button"):
-                st.session_state.timer_active = False
-                # Auto-save to both sheets / บันทึกอัตโนมัติไปทั้งสองชีท
-                with st.spinner("Saving session data... / กำลังบันทึกข้อมูล..."):
-                    # Save to main log sheet / บันทึกไปชีทบันทึกหลัก
-                    save_session_to_sheet(
-                        st.session_state.user_name,
-                        st.session_state.user_email,
-                        st.session_state.chat_history,
-                        st.session_state.get('current_case_name', None)
-                    )
-                    # Save to latest session sheet / บันทึกไปชีทเซสชันล่าสุด
-                    save_latest_session(
-                        st.session_state.user_name,
-                        st.session_state.user_email,
-                        st.session_state.chat_history,
-                        st.session_state.get('current_case_name', None)
-                    )
-                st.session_state.page = 'end'
-                st.rerun()
+    # Start fixed header wrapper / เริ่ม wrapper สำหรับ header แบบ fixed
+    st.markdown('<div class="fixed-header">', unsafe_allow_html=True)
 
-        st.divider()
+    st.title("Interview Simulation / การฝึกซ้อมสัมภาษณ์")
+
+    # Display timer using fragment (updates independently) / แสดงตัวจับเวลาด้วย fragment (อัพเดทอิสระ)
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        # Use the fragment timer that updates every second without reloading the page
+        # ใช้ fragment timer ที่อัพเดททุกวินาทีโดยไม่โหลดหน้าใหม่
+        display_timer()
+
+    with col2:
+        if st.button("🛑 End Case", type="secondary", use_container_width=True, key="end_case_button"):
+            st.session_state.timer_active = False
+            # Auto-save to both sheets / บันทึกอัตโนมัติไปทั้งสองชีท
+            with st.spinner("Saving session data... / กำลังบันทึกข้อมูล..."):
+                # Save to main log sheet / บันทึกไปชีทบันทึกหลัก
+                save_session_to_sheet(
+                    st.session_state.user_name,
+                    st.session_state.user_email,
+                    st.session_state.chat_history,
+                    st.session_state.get('current_case_name', None)
+                )
+                # Save to latest session sheet / บันทึกไปชีทเซสชันล่าสุด
+                save_latest_session(
+                    st.session_state.user_name,
+                    st.session_state.user_email,
+                    st.session_state.chat_history,
+                    st.session_state.get('current_case_name', None)
+                )
+            st.session_state.page = 'end'
+            st.rerun()
+
+    st.divider()
+
+    # End fixed header wrapper / จบ wrapper สำหรับ header แบบ fixed
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # ========================================================================
     # SCROLLABLE CHAT AREA (LARGER HEIGHT) / พื้นที่แชทแบบเลื่อนได้ (ขนาดใหญ่ขึ้น)
