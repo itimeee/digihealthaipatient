@@ -747,50 +747,58 @@ def page_chat():
     Main chat interface with timer and scrollable chat area
     หน้าสนทนากับ AI พร้อมตัวจับเวลาและพื้นที่แชทแบบเลื่อนได้
     """
-    st.title("Interview Simulation / การฝึกซ้อมสัมภาษณ์")
-
     # ========================================================================
-    # TIMER SECTION (FIXED AT TOP) / ส่วนตัวจับเวลา (อยู่ด้านบนแบบคงที่)
+    # HEADER SECTION (ALWAYS VISIBLE AT TOP) / ส่วนหัว (มองเห็นได้เสมอด้านบน)
     # ========================================================================
 
-    # Display timer using fragment (updates independently) / แสดงตัวจับเวลาด้วย fragment (อัพเดทอิสระ)
-    col1, col2 = st.columns([1, 1])
+    # Create header container to group title, timer, and end button
+    # สร้างคอนเทนเนอร์หัวเพื่อจัดกลุ่มชื่อ ตัวจับเวลา และปุ่มจบ
+    header_container = st.container()
 
-    with col1:
-        # Use the fragment timer that updates every second without reloading the page
-        # ใช้ fragment timer ที่อัพเดททุกวินาทีโดยไม่โหลดหน้าใหม่
-        display_timer()
+    with header_container:
+        st.title("Interview Simulation / การฝึกซ้อมสัมภาษณ์")
 
-    with col2:
-        if st.button("🛑 End Case", type="secondary", use_container_width=True, key="end_case_button"):
-            st.session_state.timer_active = False
-            # Auto-save to both sheets / บันทึกอัตโนมัติไปทั้งสองชีท
-            with st.spinner("Saving session data... / กำลังบันทึกข้อมูล..."):
-                # Save to main log sheet / บันทึกไปชีทบันทึกหลัก
-                save_session_to_sheet(
-                    st.session_state.user_name,
-                    st.session_state.user_email,
-                    st.session_state.chat_history,
-                    st.session_state.get('current_case_name', None)
-                )
-                # Save to latest session sheet / บันทึกไปชีทเซสชันล่าสุด
-                save_latest_session(
-                    st.session_state.user_name,
-                    st.session_state.user_email,
-                    st.session_state.chat_history,
-                    st.session_state.get('current_case_name', None)
-                )
-            st.session_state.page = 'end'
-            st.rerun()
+        # Display timer using fragment (updates independently) / แสดงตัวจับเวลาด้วย fragment (อัพเดทอิสระ)
+        col1, col2 = st.columns([1, 1])
 
-    st.divider()
+        with col1:
+            # Use the fragment timer that updates every second without reloading the page
+            # ใช้ fragment timer ที่อัพเดททุกวินาทีโดยไม่โหลดหน้าใหม่
+            display_timer()
+
+        with col2:
+            if st.button("🛑 End Case", type="secondary", use_container_width=True, key="end_case_button"):
+                st.session_state.timer_active = False
+                # Auto-save to both sheets / บันทึกอัตโนมัติไปทั้งสองชีท
+                with st.spinner("Saving session data... / กำลังบันทึกข้อมูล..."):
+                    # Save to main log sheet / บันทึกไปชีทบันทึกหลัก
+                    save_session_to_sheet(
+                        st.session_state.user_name,
+                        st.session_state.user_email,
+                        st.session_state.chat_history,
+                        st.session_state.get('current_case_name', None)
+                    )
+                    # Save to latest session sheet / บันทึกไปชีทเซสชันล่าสุด
+                    save_latest_session(
+                        st.session_state.user_name,
+                        st.session_state.user_email,
+                        st.session_state.chat_history,
+                        st.session_state.get('current_case_name', None)
+                    )
+                st.session_state.page = 'end'
+                st.rerun()
+
+        st.divider()
 
     # ========================================================================
-    # SCROLLABLE CHAT AREA / พื้นที่แชทแบบเลื่อนได้
+    # SCROLLABLE CHAT AREA (LARGER HEIGHT) / พื้นที่แชทแบบเลื่อนได้ (ขนาดใหญ่ขึ้น)
     # ========================================================================
 
-    # Use Streamlit's native scrollable container / ใช้คอนเทนเนอร์แบบเลื่อนได้ของ Streamlit
-    with st.container(height=500):
+    # Use Streamlit's native scrollable container with increased height
+    # ใช้คอนเทนเนอร์แบบเลื่อนได้ของ Streamlit ขนาด 600px
+    chat_container = st.container(height=600)
+
+    with chat_container:
         # Display chat history / แสดงประวัติการสนทนา
         if len(st.session_state.chat_history) == 0:
             st.info("👋 Start the conversation by greeting the patient.")
