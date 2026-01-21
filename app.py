@@ -6,6 +6,7 @@ DigiHealth AI Patient - Psychiatric Training Application
 import streamlit as st
 import streamlit.components.v1 as components
 import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
@@ -305,8 +306,22 @@ async def get_ai_response_async(chat_history, case_context):
             "temperature": case_temperature,
         }
 
-        # Get response with temperature configuration using async API / รับคำตอบพร้อมการตั้งค่า temperature โดยใช้ API แบบ async
-        response = await model.generate_content_async(full_prompt, generation_config=generation_config)
+        # Configure safety settings for psychiatric training context / ตั้งค่าความปลอดภัยสำหรับบริบทการฝึกอบรมทางจิตเวช
+        # Medical simulation requires discussing sensitive topics (depression, self-harm, trauma)
+        # การจำลองทางการแพทย์ต้องพูดถึงหัวข้อที่ละเอียดอ่อน (ซึมเศร้า, ทำร้ายตัวเอง, บาดแผลทางใจ)
+        safety_settings = {
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        }
+
+        # Get response with temperature configuration and safety settings using async API / รับคำตอบพร้อมการตั้งค่า temperature และความปลอดภัยโดยใช้ API แบบ async
+        response = await model.generate_content_async(
+            full_prompt,
+            generation_config=generation_config,
+            safety_settings=safety_settings
+        )
 
         # Check if response was blocked by safety settings / ตรวจสอบว่าคำตอบถูกบล็อกด้วยการตั้งค่าความปลอดภัยหรือไม่
         if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
