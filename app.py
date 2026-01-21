@@ -20,13 +20,6 @@ from cases import ALL_CASES, get_case_by_name
 # CONFIGURATION / การตั้งค่า
 # ============================================================================
 # You can easily change these values / คุณสามารถแก้ไขค่าเหล่านี้ได้ง่าย ๆ
-
-# Gemini Model Name / ชื่อโมเดล AI
-MODEL_NAME = "gemini-2.5-flash"
-
-# System Prompt for AI Patient / คำสั่งสำหรับ AI แสดงบทบาทผู้ป่วย
-SYSTEM_PROMPT = """You are a patient in a psychiatric clinic. Answer questions naturally and realistically based on the case information provided. Stay in character throughout the conversation. Respond in a conversational manner as a real patient would."""
-
 # Timer Duration (in minutes) / ระยะเวลาจับเวลา (นาที)
 TIMER_DURATION_MINUTES = 30
 
@@ -440,12 +433,6 @@ def page_login():
             <h1 style='color: #2c5f7d; font-size: 3.5em; font-weight: 700; margin: 0;'>
                 🏥 DigiHealth AI Patient
             </h1>
-            <p style='color: #4a90a4; font-size: 1.3em; margin-top: 10px; font-weight: 400;'>
-                Psychiatric Training Simulator
-            </p>
-            <p style='color: #5a7a8a; font-size: 0.95em; margin-top: 5px;'>
-                Advanced Clinical Skills Development Platform
-            </p>
         </div>
     """, unsafe_allow_html=True)
 
