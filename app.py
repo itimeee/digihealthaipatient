@@ -710,50 +710,6 @@ def format_time(seconds):
     return f"{minutes:02d}:{secs:02d}"
 
 
-@st.fragment(run_every=1)
-def display_timer():
-    """
-    Timer fragment that updates independently without reloading the page
-    ส่วนแสดงตัวจับเวลาที่อัพเดทอิสระโดยไม่โหลดหน้าใหม่
-    """
-    # Check if AI response is ready (polling mechanism) / ตรวจสอบว่า AI ตอบเสร็จแล้วหรือยัง
-    if st.session_state.ai_response_ready and st.session_state.pending_ai_response:
-        # Append AI response to history / เพิ่มคำตอบ AI ในประวัติ
-        st.session_state.chat_history.append({
-            "role": "assistant",
-            "content": st.session_state.pending_ai_response
-        })
-        # Reset flags / รีเซ็ตสถานะ
-        st.session_state.ai_responding = False
-        st.session_state.ai_response_ready = False
-        st.session_state.pending_ai_response = None
-        # Trigger rerun to show the response / รีรันเพื่อแสดงคำตอบ
-        st.rerun()
-
-    # Calculate remaining time / คำนวณเวลาที่เหลือ
-    if st.session_state.timer_active and st.session_state.start_time:
-        elapsed = datetime.now() - st.session_state.start_time
-        total_seconds = TIMER_DURATION_MINUTES * 60
-        remaining_seconds = total_seconds - int(elapsed.total_seconds())
-
-        if remaining_seconds <= 0:
-            remaining_seconds = 0
-            st.session_state.timer_active = False
-    else:
-        remaining_seconds = 0
-
-    # Change color based on time remaining / เปลี่ยนสีตามเวลาที่เหลือ
-    if remaining_seconds > 300:  # More than 5 minutes
-        timer_color = "#4a90a4"  # Medical blue
-    elif remaining_seconds > 60:  # More than 1 minute
-        timer_color = "#e67e22"  # Warm orange for caution
-    else:
-        timer_color = "#c0392b"  # Deep red for urgency
-
-    st.markdown(
-        f"<h2 style='text-align: center; color: {timer_color}; font-weight: 600;'>⏱️ {format_time(remaining_seconds)}</h2>",
-        unsafe_allow_html=True
-    )
 
 
 def page_chat():
@@ -804,6 +760,23 @@ def page_chat():
     # ========================================================================
 
     st.title("Interview Simulation / การฝึกซ้อมสัมภาษณ์")
+
+    # ========================================================================
+    # AI RESPONSE POLLING / ตรวจสอบการตอบสนองของ AI
+    # ========================================================================
+    # Check if AI response is ready (polling mechanism) / ตรวจสอบว่า AI ตอบเสร็จแล้วหรือยัง
+    if st.session_state.ai_response_ready and st.session_state.pending_ai_response:
+        # Append AI response to history / เพิ่มคำตอบ AI ในประวัติ
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": st.session_state.pending_ai_response
+        })
+        # Reset flags / รีเซ็ตสถานะ
+        st.session_state.ai_responding = False
+        st.session_state.ai_response_ready = False
+        st.session_state.pending_ai_response = None
+        # Trigger rerun to show the response / รีรันเพื่อแสดงคำตอบ
+        st.rerun()
 
     # ========================================================================
     # CHAT HISTORY / ประวัติการสนทนา
@@ -887,9 +860,71 @@ def page_chat():
     col1, col2 = st.columns([1, 1])
 
     with col1:
-        # Use the fragment timer that updates every second without reloading the page
-        # ใช้ fragment timer ที่อัพเดททุกวินาทีโดยไม่โหลดหน้าใหม่
-        display_timer()
+        # Calculate remaining time once in Python / คำนวณเวลาที่เหลือครั้งเดียวใน Python
+        if st.session_state.timer_active and st.session_state.start_time:
+            elapsed = datetime.now() - st.session_state.start_time
+            total_seconds = TIMER_DURATION_MINUTES * 60
+            remaining_seconds = total_seconds - int(elapsed.total_seconds())
+
+            if remaining_seconds <= 0:
+                remaining_seconds = 0
+                st.session_state.timer_active = False
+        else:
+            remaining_seconds = 0
+
+        # Determine color based on time remaining / กำหนดสีตามเวลาที่เหลือ
+        if remaining_seconds > 300:  # More than 5 minutes
+            timer_color = "#4a90a4"  # Medical blue
+        elif remaining_seconds > 60:  # More than 1 minute
+            timer_color = "#e67e22"  # Warm orange for caution
+        else:
+            timer_color = "#c0392b"  # Deep red for urgency
+
+        # Display timer div that will be updated by JavaScript / แสดง div ตัวจับเวลาที่จะอัพเดทด้วย JavaScript
+        st.markdown(
+            f'<div id="countdown-timer" style="text-align: center; color: {timer_color}; font-weight: 600; font-size: 2em;">⏱️ {format_time(remaining_seconds)}</div>',
+            unsafe_allow_html=True
+        )
+
+        # Inject JavaScript to update timer every second / แทรก JavaScript เพื่ออัพเดทตัวจับเวลาทุกวินาที
+        components.html(
+            f"""
+            <script>
+            (function() {{
+                let remainingSeconds = {remaining_seconds};
+
+                function formatTime(seconds) {{
+                    const minutes = Math.floor(seconds / 60);
+                    const secs = seconds % 60;
+                    return minutes.toString().padStart(2, '0') + ':' + secs.toString().padStart(2, '0');
+                }}
+
+                function updateTimer() {{
+                    const timerElement = window.parent.document.getElementById('countdown-timer');
+                    if (timerElement && remainingSeconds > 0) {{
+                        remainingSeconds--;
+
+                        // Update color based on time remaining
+                        let color = '#4a90a4';  // Medical blue
+                        if (remainingSeconds <= 60) {{
+                            color = '#c0392b';  // Deep red for urgency
+                        }} else if (remainingSeconds <= 300) {{
+                            color = '#e67e22';  // Warm orange for caution
+                        }}
+
+                        timerElement.style.color = color;
+                        timerElement.innerHTML = '⏱️ ' + formatTime(remainingSeconds);
+                    }} else if (remainingSeconds <= 0) {{
+                        clearInterval(timerInterval);
+                    }}
+                }}
+
+                const timerInterval = setInterval(updateTimer, 1000);
+            }})();
+            </script>
+            """,
+            height=0
+        )
 
     with col2:
         if st.button("🛑 End Case", type="secondary", use_container_width=True, key="end_case_button"):
