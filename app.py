@@ -832,12 +832,6 @@ def page_chat():
                     </div>
                 </div>
             """, unsafe_allow_html=True)
-
-        # Polling mechanism: Keep checking if the background thread has finished
-        # กลไกการตรวจสอบซ้ำ: ตรวจสอบว่าเธรดพื้นหลังเสร็จหรือยัง
-        if not st.session_state.ai_response_ready:
-            time.sleep(0.5)  # Wait a bit to prevent busy looping / รอเล็กน้อยเพื่อป้องกันการวนลูปแบบยุ่ง
-            st.rerun()       # Force a rerun to check the thread status again / บังคับให้รันใหม่เพื่อตรวจสอบสถานะเธรดอีกครั้ง
     else:
         # IMPORTANT: Clear it but keep the placeholder alive / เคลียร์แต่เก็บตัวยึดตำแหน่งไว้
         thinking_placeholder.empty()
@@ -1048,6 +1042,16 @@ def page_chat():
         """,
         height=0,  # Hidden component / ซ่อนคอมโพเนนต์
     )
+
+    # ========================================================================
+    # POLLING LOOP - Check if AI response is ready (at the very end)
+    # วนลูปตรวจสอบ - ตรวจสอบว่า AI ตอบเสร็จหรือยัง (ที่ท้ายสุด)
+    # ========================================================================
+    # This must be at the END so all UI elements render first before sleeping
+    # ต้องอยู่ท้ายสุดเพื่อให้ UI ทั้งหมดแสดงก่อนการหยุดรอ
+    if st.session_state.ai_responding and not st.session_state.ai_response_ready:
+        time.sleep(0.5)  # Wait a bit to prevent busy looping / รอเล็กน้อยเพื่อป้องกันการวนลูปแบบยุ่ง
+        st.rerun()       # Force a rerun to check the thread status again / บังคับให้รันใหม่เพื่อตรวจสอบสถานะเธรดอีกครั้ง
 
 
 # ============================================================================
