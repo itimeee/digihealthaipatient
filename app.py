@@ -763,6 +763,31 @@ def page_chat():
     st.title("Interview Simulation / การฝึกซ้อมสัมภาษณ์")
 
     # ========================================================================
+    # STABLE POLLING FRAGMENT - Check for AI response completion
+    # Fragment แบบเสถียรสำหรับตรวจสอบ - ตรวจสอบการเสร็จสิ้นของ AI
+    # ========================================================================
+    # CRITICAL: This fragment is placed at the TOP to ensure stable DOM position
+    # สำคัญ: Fragment นี้วางไว้ที่ด้านบนเพื่อให้ตำแหน่ง DOM คงที่
+    @st.fragment(run_every=0.5)
+    def polling_fragment():
+        """
+        Hidden polling fragment that checks if AI response is ready
+        Fragment ที่ซ่อนไว้สำหรับตรวจสอบว่า AI ตอบเสร็จหรือยัง
+        """
+        # Only check if we are waiting for an AI response
+        # ตรวจสอบเฉพาะเมื่อกำลังรอคำตอบจาก AI
+        if st.session_state.ai_responding:
+            # If the response is ready, trigger a FULL page rerun to show it
+            # ถ้าคำตอบพร้อมแล้ว ให้รีรันทั้งหน้าเพื่อแสดงผล
+            if st.session_state.ai_response_ready:
+                st.rerun()
+            # If not ready, this fragment just re-runs itself silently without reloading the whole page
+            # ถ้ายังไม่พร้อม fragment นี้จะรันตัวเองเงียบๆ โดยไม่โหลดทั้งหน้า
+
+    # Call the polling fragment / เรียกใช้ polling fragment
+    polling_fragment()
+
+    # ========================================================================
     # AI RESPONSE POLLING / ตรวจสอบการตอบสนองของ AI
     # ========================================================================
     # Check if AI response is ready (polling mechanism) / ตรวจสอบว่า AI ตอบเสร็จแล้วหรือยัง
@@ -1042,16 +1067,6 @@ def page_chat():
         """,
         height=0,  # Hidden component / ซ่อนคอมโพเนนต์
     )
-
-    # ========================================================================
-    # POLLING LOOP - Check if AI response is ready (at the very end)
-    # วนลูปตรวจสอบ - ตรวจสอบว่า AI ตอบเสร็จหรือยัง (ที่ท้ายสุด)
-    # ========================================================================
-    # This must be at the END so all UI elements render first before sleeping
-    # ต้องอยู่ท้ายสุดเพื่อให้ UI ทั้งหมดแสดงก่อนการหยุดรอ
-    if st.session_state.ai_responding and not st.session_state.ai_response_ready:
-        time.sleep(0.5)  # Wait a bit to prevent busy looping / รอเล็กน้อยเพื่อป้องกันการวนลูปแบบยุ่ง
-        st.rerun()       # Force a rerun to check the thread status again / บังคับให้รันใหม่เพื่อตรวจสอบสถานะเธรดอีกครั้ง
 
 
 # ============================================================================
