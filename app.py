@@ -12,6 +12,7 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 import asyncio
 import threading
+import time
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 
 # Import case configurations / นำเข้าการตั้งค่าเคส
@@ -831,6 +832,12 @@ def page_chat():
                     </div>
                 </div>
             """, unsafe_allow_html=True)
+
+        # Polling mechanism: Keep checking if the background thread has finished
+        # กลไกการตรวจสอบซ้ำ: ตรวจสอบว่าเธรดพื้นหลังเสร็จหรือยัง
+        if not st.session_state.ai_response_ready:
+            time.sleep(0.5)  # Wait a bit to prevent busy looping / รอเล็กน้อยเพื่อป้องกันการวนลูปแบบยุ่ง
+            st.rerun()       # Force a rerun to check the thread status again / บังคับให้รันใหม่เพื่อตรวจสอบสถานะเธรดอีกครั้ง
     else:
         # IMPORTANT: Clear it but keep the placeholder alive / เคลียร์แต่เก็บตัวยึดตำแหน่งไว้
         thinking_placeholder.empty()
