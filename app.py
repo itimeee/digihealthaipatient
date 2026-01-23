@@ -763,46 +763,45 @@ def page_chat():
     st.title("Interview Simulation / การฝึกซ้อมสัมภาษณ์")
 
     # ========================================================================
-    # STABLE POLLING FRAGMENT - Check for AI response completion
-    # Fragment แบบเสถียรสำหรับตรวจสอบ - ตรวจสอบการเสร็จสิ้นของ AI
+    # AI RESPONSE PROCESSING - Must be BEFORE fragment to prevent infinite rerun
+    # การประมวลผลคำตอบจาก AI - ต้องอยู่ก่อน fragment เพื่อป้องกันการรีรันไม่รู้จบ
     # ========================================================================
-    # CRITICAL: This fragment is placed at the TOP to ensure stable DOM position
-    # สำคัญ: Fragment นี้วางไว้ที่ด้านบนเพื่อให้ตำแหน่ง DOM คงที่
-    @st.fragment(run_every=0.5)
-    def polling_fragment():
-        """
-        Hidden polling fragment that checks if AI response is ready
-        Fragment ที่ซ่อนไว้สำหรับตรวจสอบว่า AI ตอบเสร็จหรือยัง
-        """
-        # Only check if we are waiting for an AI response
-        # ตรวจสอบเฉพาะเมื่อกำลังรอคำตอบจาก AI
-        if st.session_state.ai_responding:
-            # If the response is ready, trigger a FULL page rerun to show it
-            # ถ้าคำตอบพร้อมแล้ว ให้รีรันทั้งหน้าเพื่อแสดงผล
-            if st.session_state.ai_response_ready:
-                st.rerun()
-            # If not ready, this fragment just re-runs itself silently without reloading the whole page
-            # ถ้ายังไม่พร้อม fragment นี้จะรันตัวเองเงียบๆ โดยไม่โหลดทั้งหน้า
-
-    # Call the polling fragment / เรียกใช้ polling fragment
-    polling_fragment()
-
-    # ========================================================================
-    # AI RESPONSE POLLING / ตรวจสอบการตอบสนองของ AI
-    # ========================================================================
-    # Check if AI response is ready (polling mechanism) / ตรวจสอบว่า AI ตอบเสร็จแล้วหรือยัง
+    # Check if AI response is ready and process it immediately
+    # ตรวจสอบว่า AI ตอบเสร็จแล้วและประมวลผลทันที
     if st.session_state.ai_response_ready and st.session_state.pending_ai_response:
         # Append AI response to history / เพิ่มคำตอบ AI ในประวัติ
         st.session_state.chat_history.append({
             "role": "assistant",
             "content": st.session_state.pending_ai_response
         })
-        # Reset flags / รีเซ็ตสถานะ
+        # Reset flags BEFORE rerun / รีเซ็ตสถานะก่อนรีรัน
         st.session_state.ai_responding = False
         st.session_state.ai_response_ready = False
         st.session_state.pending_ai_response = None
-        # Trigger rerun to show the response / รีรันเพื่อแสดงคำตอบ
+        # Now trigger rerun to show the response / รีรันเพื่อแสดงคำตอบ
         st.rerun()
+
+    # ========================================================================
+    # STABLE POLLING FRAGMENT - Check for AI response completion
+    # Fragment แบบเสถียรสำหรับตรวจสอบ - ตรวจสอบการเสร็จสิ้นของ AI
+    # ========================================================================
+    # CRITICAL: This fragment is placed AFTER response processing
+    # สำคัญ: Fragment นี้วางไว้หลังการประมวลผลคำตอบ
+    @st.fragment(run_every=0.5)
+    def polling_fragment():
+        """
+        Hidden polling fragment that checks if AI response is ready
+        Fragment ที่ซ่อนไว้สำหรับตรวจสอบว่า AI ตอบเสร็จหรือยัง
+        """
+        # Only trigger rerun if AI is responding and response is ready
+        # รีรันเฉพาะเมื่อ AI กำลังตอบและคำตอบพร้อมแล้ว
+        if st.session_state.ai_responding and st.session_state.ai_response_ready:
+            st.rerun()
+        # If not ready, this fragment just re-runs itself silently
+        # ถ้ายังไม่พร้อม fragment นี้จะรันตัวเองเงียบๆ
+
+    # Call the polling fragment / เรียกใช้ polling fragment
+    polling_fragment()
 
     # ========================================================================
     # CHAT HISTORY / ประวัติการสนทนา
