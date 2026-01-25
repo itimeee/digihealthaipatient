@@ -19,6 +19,18 @@ from streamlit.runtime.scriptrunner import add_script_run_ctx
 # Import case configurations / นำเข้าการตั้งค่าเคส
 from cases import ALL_CASES, get_case_by_name
 
+# Import feedback modules / นำเข้าโมดูล feedback
+from feedback_config import PSYCHODYNAMIC_FRAMEWORKS
+from feedback_service import (
+    generate_feedback,
+    format_transcript_for_display,
+    prepare_transcript_rows,
+)
+from feedback_logger import (
+    append_session_to_feedback_sheet,
+    prepare_session_row,
+)
+
 # ============================================================================
 # CONFIGURATION / การตั้งค่า
 # ============================================================================
@@ -584,6 +596,37 @@ def initialize_session_state():
 
     if 'pending_ai_response' not in st.session_state:
         st.session_state.pending_ai_response = None
+
+    # Feedback form state / สถานะฟอร์ม feedback
+    if 'provisional_dx' not in st.session_state:
+        st.session_state.provisional_dx = ''
+
+    if 'ddx1' not in st.session_state:
+        st.session_state.ddx1 = ''
+
+    if 'ddx2' not in st.session_state:
+        st.session_state.ddx2 = ''
+
+    if 'ddx3' not in st.session_state:
+        st.session_state.ddx3 = ''
+
+    if 'formulation_framework' not in st.session_state:
+        st.session_state.formulation_framework = PSYCHODYNAMIC_FRAMEWORKS[0]
+
+    if 'formulation_text' not in st.session_state:
+        st.session_state.formulation_text = ''
+
+    if 'feedback_result' not in st.session_state:
+        st.session_state.feedback_result = None
+
+    if 'feedback_generated' not in st.session_state:
+        st.session_state.feedback_generated = False
+
+    if 'feedback_error' not in st.session_state:
+        st.session_state.feedback_error = None
+
+    if 'feedback_session_id' not in st.session_state:
+        st.session_state.feedback_session_id = None
 
 
 # ============================================================================
@@ -1215,10 +1258,102 @@ def page_chat():
 # PAGE 5: END / SAVE DATA
 # ============================================================================
 
+def display_feedback_results(feedback_result: dict):
+    """
+    Display feedback results in formatted sections.
+    แสดงผล feedback ในรูปแบบที่จัดหมวดหมู่
+    """
+    if not feedback_result:
+        st.warning("ไม่พบข้อมูล feedback")
+        return
+
+    # Check if fallback / ตรวจสอบว่าเป็น fallback หรือไม่
+    if feedback_result.get("is_fallback"):
+        st.warning("⚠️ ไม่สามารถสร้าง feedback จาก AI ได้ แสดงผลลัพธ์เริ่มต้น")
+
+    # Show model used / แสดงโมเดลที่ใช้
+    if feedback_result.get("model_used"):
+        st.caption(f"🤖 Model: {feedback_result.get('model_used')}")
+
+    # Check for parse failure / ตรวจสอบการ parse ล้มเหลว
+    if feedback_result.get("parse_failed"):
+        st.warning("⚠️ ไม่สามารถ parse JSON ได้ แสดงผลลัพธ์ดิบ")
+        with st.expander("Raw Response"):
+            st.text(feedback_result.get("raw_text", ""))
+
+    st.markdown("---")
+
+    # ========== SECTION 1: Interview Feedback ==========
+    st.subheader("📋 1) Feedback: การสัมภาษณ์ (Interview)")
+
+    interview_fb = feedback_result.get("interview_feedback", {})
+
+    # Strengths / จุดแข็ง
+    strengths = interview_fb.get("strengths", [])
+    if strengths:
+        st.markdown("**✅ จุดแข็ง (Strengths):**")
+        for s in strengths:
+            st.markdown(f"- {s}")
+
+    # Missed opportunities / สิ่งที่พลาดไป
+    missed = interview_fb.get("missed_opportunities", [])
+    if missed:
+        st.markdown("**⚠️ สิ่งที่พลาดไป (Missed Opportunities):**")
+        for m in missed:
+            st.markdown(f"- {m}")
+
+    # Suggested questions / คำถามที่ควรถาม
+    suggestions = interview_fb.get("suggested_questions", [])
+    if suggestions:
+        st.markdown("**💡 คำถามที่ควรถามเพิ่ม (Suggested Questions):**")
+        for sq in suggestions:
+            st.markdown(f"- {sq}")
+
+    # Risk assessment notes / หมายเหตุการประเมินความเสี่ยง
+    risk_notes = interview_fb.get("risk_assessment_notes", "")
+    if risk_notes:
+        st.markdown(f"**🚨 ความคิดเห็นเรื่อง Risk Assessment:**\n\n{risk_notes}")
+
+    # Overall comment / ความคิดเห็นโดยรวม
+    overall_interview = interview_fb.get("overall_comment", "")
+    if overall_interview:
+        st.info(f"**สรุปภาพรวมการสัมภาษณ์:**\n\n{overall_interview}")
+
+    st.markdown("---")
+
+    # ========== SECTION 2: Clinical Feedback ==========
+    st.subheader("🩺 2) Feedback: Dx/DDx/Psychodynamic (Clinical Reasoning)")
+
+    clinical_fb = feedback_result.get("clinical_feedback", {})
+
+    # Provisional Dx comment / ความคิดเห็นต่อ Provisional Dx
+    prov_dx_comment = clinical_fb.get("provisional_dx_comment", "")
+    if prov_dx_comment:
+        st.markdown(f"**📌 Provisional Diagnosis:**\n\n{prov_dx_comment}")
+
+    # DDx comments / ความคิดเห็นต่อ DDx
+    ddx_comment = clinical_fb.get("ddx_comment", {})
+    if ddx_comment:
+        st.markdown("**📋 Differential Diagnosis:**")
+        for key, value in ddx_comment.items():
+            if value:
+                st.markdown(f"- **{key.upper()}:** {value}")
+
+    # Psychodynamic formulation comment / ความคิดเห็นต่อ Psychodynamic
+    psycho_comment = clinical_fb.get("psychodynamic_formulation_comment", "")
+    if psycho_comment:
+        st.markdown(f"**🧠 Psychodynamic Formulation:**\n\n{psycho_comment}")
+
+    # Overall clinical comment / ความคิดเห็นโดยรวม clinical
+    overall_clinical = clinical_fb.get("overall_comment", "")
+    if overall_clinical:
+        st.info(f"**สรุปภาพรวม Clinical Reasoning:**\n\n{overall_clinical}")
+
+
 def page_end():
     """
-    End page - display session results and interview log
-    หน้าจบการฝึกซ้อม - แสดงผลและบันทึกการสัมภาษณ์
+    End page - display session results, feedback form, and AI feedback.
+    หน้าจบการฝึกซ้อม - แสดงผล, ฟอร์มตอบคำถาม, และ AI feedback
     """
     st.title("Session Complete / เสร็จสิ้นการฝึกซ้อม")
 
@@ -1227,63 +1362,311 @@ def page_end():
     st.success("💾 Your session data has been automatically saved!")
 
     # Calculate session duration / คำนวณระยะเวลา
-    col1, col2 = st.columns(2)
+    duration_seconds = 0
+    if st.session_state.start_time:
+        duration = datetime.now() - st.session_state.start_time
+        duration_seconds = int(duration.total_seconds())
+
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         if st.session_state.start_time:
-            duration = datetime.now() - st.session_state.start_time
-            minutes = int(duration.total_seconds() // 60)
-            seconds = int(duration.total_seconds() % 60)
-            st.info(f"⏱️ **Session Duration**\n\n{minutes} minutes {seconds} seconds")
+            minutes = duration_seconds // 60
+            seconds = duration_seconds % 60
+            st.info(f"⏱️ **Session Duration**\n\n{minutes} min {seconds} sec")
 
     with col2:
-        # Show message count / แสดงจำนวนข้อความ
-        st.info(f"💬 **Total Messages**\n\n{len(st.session_state.chat_history)} messages")
+        # Total message count / จำนวนข้อความทั้งหมด
+        total_msgs = len(st.session_state.chat_history)
+        st.info(f"💬 **Total Messages**\n\n{total_msgs} messages")
+
+    with col3:
+        # Doctor turns / จำนวนคำถามของแพทย์
+        doctor_turns = sum(1 for m in st.session_state.chat_history if m.get("role") == "user")
+        st.info(f"👨‍⚕️ **Doctor Turns**\n\n{doctor_turns} questions")
+
+    with col4:
+        # Patient turns / จำนวนคำตอบของผู้ป่วย
+        patient_turns = sum(1 for m in st.session_state.chat_history if m.get("role") == "assistant")
+        st.info(f"🧑 **Patient Turns**\n\n{patient_turns} responses")
 
     st.markdown("<br>", unsafe_allow_html=True)
 
     # Display interview transcript / แสดงบันทึกการสัมภาษณ์
-    st.subheader("📋 Interview Transcript / บันทึกการสัมภาษณ์")
+    with st.expander("📋 Interview Transcript / บันทึกการสัมภาษณ์", expanded=False):
+        # Get latest session data from sheet / ดึงข้อมูลเซสชันล่าสุดจากชีท
+        with st.spinner("Loading interview data... / กำลังโหลดข้อมูล..."):
+            session_data = get_latest_session_data()
 
-    # Get latest session data from sheet / ดึงข้อมูลเซสชันล่าสุดจากชีท
-    with st.spinner("Loading interview data... / กำลังโหลดข้อมูล..."):
-        session_data = get_latest_session_data()
+        if session_data:
+            # Display in a nice format / แสดงในรูปแบบที่สวยงาม
+            for idx, row in enumerate(session_data):
+                speaker = row.get('Speaker', '')
+                message = row.get('Message', '')
 
-    if session_data:
-        # Display in a nice format / แสดงในรูปแบบที่สวยงาม
-        for idx, row in enumerate(session_data):
-            speaker = row.get('Speaker', '')
-            message = row.get('Message', '')
+                if speaker == 'user':
+                    # Doctor's message / ข้อความของแพทย์
+                    st.markdown(f"""
+                        <div style='background: linear-gradient(135deg, #4a90a4 0%, #5ba3b8 100%);
+                                    color: white; padding: 12px 16px; border-radius: 12px;
+                                    margin: 8px 0;'>
+                            <b>👨‍⚕️ You:</b><br>{message}
+                        </div>
+                    """, unsafe_allow_html=True)
+                elif speaker == 'assistant':
+                    # Patient's message / ข้อความของผู้ป่วย
+                    st.markdown(f"""
+                        <div style='background-color: white; padding: 12px 16px;
+                                    border-radius: 12px; margin: 8px 0;
+                                    border: 2px solid #e3f2fd;'>
+                            <b style='color: #2c5f7d;'>🧑 Patient:</b><br>{message}
+                        </div>
+                    """, unsafe_allow_html=True)
 
-            if speaker == 'user':
-                # Doctor's message / ข้อความของแพทย์
-                st.markdown(f"""
-                    <div style='background: linear-gradient(135deg, #4a90a4 0%, #5ba3b8 100%);
-                                color: white; padding: 12px 16px; border-radius: 12px;
-                                margin: 8px 0;'>
-                        <b>👨‍⚕️ You:</b><br>{message}
-                    </div>
-                """, unsafe_allow_html=True)
-            elif speaker == 'assistant':
-                # Patient's message / ข้อความของผู้ป่วย
-                st.markdown(f"""
-                    <div style='background-color: white; padding: 12px 16px;
-                                border-radius: 12px; margin: 8px 0;
-                                border: 2px solid #e3f2fd;'>
-                        <b style='color: #2c5f7d;'>🧑 Patient:</b><br>{message}
-                    </div>
-                """, unsafe_allow_html=True)
+            st.success(f"✅ Displayed {len(session_data)} interview exchanges")
+        else:
+            st.warning("No interview data found. The session may not have been saved properly.")
 
-        st.success(f"✅ Displayed {len(session_data)} interview exchanges")
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ========================================================================
+    # FEEDBACK FORM SECTION / ส่วนฟอร์มตอบคำถาม
+    # ========================================================================
+
+    st.subheader("📝 Post-Case Evaluation / แบบประเมินหลังเคส")
+
+    # If feedback already generated, show results / ถ้าสร้าง feedback แล้ว แสดงผล
+    if st.session_state.feedback_generated and st.session_state.feedback_result:
+        st.success("✅ Feedback generated successfully! / สร้าง feedback สำเร็จแล้ว!")
+
+        # Show submitted answers / แสดงคำตอบที่ส่งไปแล้ว
+        with st.expander("📋 Your Submitted Answers / คำตอบที่ส่งไป", expanded=False):
+            st.markdown(f"**Provisional Diagnosis:** {st.session_state.provisional_dx}")
+            st.markdown(f"**DDx 1:** {st.session_state.ddx1}")
+            st.markdown(f"**DDx 2:** {st.session_state.ddx2}")
+            st.markdown(f"**DDx 3:** {st.session_state.ddx3}")
+            st.markdown(f"**Framework:** {st.session_state.formulation_framework}")
+            st.markdown(f"**Formulation:**\n\n{st.session_state.formulation_text}")
+
+        # Display feedback / แสดง feedback
+        st.markdown("---")
+        st.subheader("🎓 AI Feedback / ผลการประเมินจาก AI")
+        display_feedback_results(st.session_state.feedback_result)
+
+        st.markdown("---")
+
+        # Re-evaluate button / ปุ่มประเมินใหม่
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.warning("⚠️ การประเมินใหม่จะบันทึกข้อมูลเพิ่มอีก 1 แถว")
+            if st.button("🔄 Re-evaluate / ประเมินใหม่", use_container_width=True):
+                st.session_state.feedback_generated = False
+                st.session_state.feedback_result = None
+                st.session_state.feedback_session_id = None
+                st.rerun()
+
     else:
-        st.warning("No interview data found. The session may not have been saved properly.")
+        # Show the form / แสดงฟอร์ม
+        st.markdown("""
+        กรุณาตอบคำถามด้านล่างเพื่อรับ feedback จาก AI:
+
+        Please answer the questions below to receive AI feedback:
+        """)
+
+        with st.form("post_case_form"):
+            # 1. Provisional Diagnosis
+            st.markdown("#### 1️⃣ Provisional Diagnosis")
+            provisional_dx = st.text_area(
+                "ระบุการวินิจฉัยเบื้องต้นของคุณ / Enter your provisional diagnosis:",
+                value=st.session_state.provisional_dx,
+                height=100,
+                placeholder="เช่น Major Depressive Disorder, single episode, moderate severity"
+            )
+
+            st.markdown("---")
+
+            # 2. Differential Diagnosis (3 items)
+            st.markdown("#### 2️⃣ Differential Diagnosis (3 ข้อ)")
+
+            ddx1 = st.text_area(
+                "DDx 1:",
+                value=st.session_state.ddx1,
+                height=60,
+                placeholder="เช่น Adjustment Disorder with Depressed Mood"
+            )
+
+            ddx2 = st.text_area(
+                "DDx 2:",
+                value=st.session_state.ddx2,
+                height=60,
+                placeholder="เช่น Bipolar II Disorder"
+            )
+
+            ddx3 = st.text_area(
+                "DDx 3:",
+                value=st.session_state.ddx3,
+                height=60,
+                placeholder="เช่น Persistent Depressive Disorder (Dysthymia)"
+            )
+
+            st.markdown("---")
+
+            # 3. Psychodynamic Formulation
+            st.markdown("#### 3️⃣ Psychodynamic Formulation")
+
+            formulation_framework = st.selectbox(
+                "เลือก Framework / Select Framework:",
+                options=PSYCHODYNAMIC_FRAMEWORKS,
+                index=PSYCHODYNAMIC_FRAMEWORKS.index(st.session_state.formulation_framework)
+                      if st.session_state.formulation_framework in PSYCHODYNAMIC_FRAMEWORKS else 0
+            )
+
+            # Dynamic placeholder based on framework / placeholder แบบ dynamic ตาม framework
+            framework_placeholders = {
+                "4P (Predisposing, Precipitating, Perpetuating, Protective)":
+                    "Predisposing: ...\nPrecipitating: ...\nPerpetuat...\nProtective: ...",
+                "Psychosexual Development (Freud)":
+                    "ระบุ stage ที่มี fixation และอธิบายความสัมพันธ์กับอาการปัจจุบัน...",
+                "Ego Psychology":
+                    "อธิบาย ego functions, defense mechanisms, และ conflict...",
+                "Self Psychology (Kohut)":
+                    "อธิบาย self-object needs, narcissistic injury, และ mirroring...",
+                "Object Relations Theory":
+                    "อธิบาย internal objects, splitting, และ projective identification...",
+                "Attachment Theory":
+                    "อธิบาย attachment style, early attachment experiences, และ current relationships..."
+            }
+
+            placeholder = framework_placeholders.get(formulation_framework, "อธิบาย formulation ตาม framework ที่เลือก...")
+
+            formulation_text = st.text_area(
+                f"Formulation ตาม {formulation_framework.split('(')[0].strip()}:",
+                value=st.session_state.formulation_text,
+                height=200,
+                placeholder=placeholder
+            )
+
+            st.markdown("---")
+
+            # Submit button
+            submitted = st.form_submit_button(
+                "📤 Submit & Get Feedback",
+                use_container_width=True,
+                type="primary"
+            )
+
+            if submitted:
+                # Validate required fields / ตรวจสอบฟิลด์ที่จำเป็น
+                if not provisional_dx.strip():
+                    st.error("⚠️ กรุณาระบุ Provisional Diagnosis")
+                elif not formulation_text.strip():
+                    st.error("⚠️ กรุณาระบุ Psychodynamic Formulation")
+                else:
+                    # Save to session state / บันทึกลง session state
+                    st.session_state.provisional_dx = provisional_dx
+                    st.session_state.ddx1 = ddx1
+                    st.session_state.ddx2 = ddx2
+                    st.session_state.ddx3 = ddx3
+                    st.session_state.formulation_framework = formulation_framework
+                    st.session_state.formulation_text = formulation_text
+
+                    # Generate session ID / สร้าง session ID
+                    session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    st.session_state.feedback_session_id = session_id
+
+                    # Prepare stats / เตรียมสถิติ
+                    stats = {
+                        "duration_seconds": duration_seconds,
+                        "total_messages": len(st.session_state.chat_history),
+                        "doctor_turns": sum(1 for m in st.session_state.chat_history if m.get("role") == "user"),
+                        "patient_turns": sum(1 for m in st.session_state.chat_history if m.get("role") == "assistant"),
+                    }
+
+                    # Prepare answers / เตรียมคำตอบ
+                    answers = {
+                        "provisional_dx": provisional_dx,
+                        "ddx1": ddx1,
+                        "ddx2": ddx2,
+                        "ddx3": ddx3,
+                        "formulation_framework": formulation_framework,
+                        "formulation_text": formulation_text,
+                    }
+
+                    # Prepare transcript text / เตรียมข้อความ transcript
+                    transcript_text = format_transcript_for_display(st.session_state.chat_history)
+
+                    # Prepare payload for feedback / เตรียม payload สำหรับ feedback
+                    payload = {
+                        "user": {
+                            "name": st.session_state.user_name,
+                            "email": st.session_state.user_email,
+                        },
+                        "case": st.session_state.get("current_case_name", "Unknown"),
+                        "mode": st.session_state.get("selected_mode", "text"),
+                        "stats": stats,
+                        "transcript_text": transcript_text,
+                        "transcript_messages": st.session_state.chat_history,
+                        "answers": answers,
+                    }
+
+                    # Generate feedback with spinner / สร้าง feedback พร้อม spinner
+                    with st.spinner("🔄 Generating AI feedback... กำลังสร้าง feedback จาก AI..."):
+                        feedback_result = generate_feedback(payload)
+
+                    # Store result / เก็บผลลัพธ์
+                    st.session_state.feedback_result = feedback_result
+                    st.session_state.feedback_generated = True
+
+                    # Log to Google Sheet / บันทึกลง Google Sheet
+                    try:
+                        credentials = get_google_credentials()
+                        if credentials:
+                            # Prepare session row / เตรียมแถว session
+                            session_row = prepare_session_row(
+                                session_id=session_id,
+                                timestamp=timestamp,
+                                user_name=st.session_state.user_name,
+                                user_email=st.session_state.user_email,
+                                case_name=st.session_state.get("current_case_name", "Unknown"),
+                                selected_mode=st.session_state.get("selected_mode", "text"),
+                                stats=stats,
+                                answers=answers,
+                                feedback_result=feedback_result,
+                            )
+
+                            # Prepare transcript rows / เตรียมแถว transcript
+                            transcript_rows = prepare_transcript_rows(
+                                session_id=session_id,
+                                chat_history=st.session_state.chat_history,
+                                timestamp=timestamp,
+                            )
+
+                            # Append to sheet / เพิ่มลง sheet
+                            success = append_session_to_feedback_sheet(
+                                credentials=credentials,
+                                session_row=session_row,
+                                transcript_rows=transcript_rows,
+                            )
+
+                            if success:
+                                st.success("✅ Session data saved to feedback sheet!")
+                            else:
+                                st.warning("⚠️ Could not save to feedback sheet (check logs)")
+                        else:
+                            st.warning("⚠️ Google credentials not available")
+                    except Exception as e:
+                        st.error(f"Error saving to sheet: {e}")
+
+                    # Rerun to show results / rerun เพื่อแสดงผลลัพธ์
+                    st.rerun()
 
     st.markdown("<br><br>", unsafe_allow_html=True)
 
     # Start new session button / ปุ่มเริ่มใหม่
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        if st.button("🔄 Start New Session", use_container_width=True, type="primary"):
+        if st.button("🔄 Start New Session / เริ่มเซสชันใหม่", use_container_width=True, type="primary"):
             # Clear all session state / ล้าง session state ทั้งหมด
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
