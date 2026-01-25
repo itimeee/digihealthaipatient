@@ -12,17 +12,55 @@ Edit these values to customize the feedback behavior without modifying app.py.
 # MODEL PROVIDER SETTINGS / การตั้งค่าผู้ให้บริการโมเดล
 # =============================================================================
 
-# Provider: "gemini" (default) - can extend to "openai", "anthropic" in future
-# ผู้ให้บริการ: "gemini" (ค่าเริ่มต้น) - สามารถขยายเป็น "openai", "anthropic" ในอนาคต
-FEEDBACK_PROVIDER = "gemini"
+# Provider options: "gemini", "medgemma", "huggingface"
+# ตัวเลือกผู้ให้บริการ: "gemini", "medgemma", "huggingface"
+# - "gemini": ใช้ Google Gemini API (ง่ายที่สุด, ใช้ GEMINI_API_KEY)
+# - "medgemma": ใช้ MedGemma ผ่าน Hugging Face Inference API (ต้องมี HF_API_TOKEN)
+# - "huggingface": ใช้โมเดลอื่นๆ บน Hugging Face
+FEEDBACK_PROVIDER = "medgemma"
 
 # Model name for feedback generation
 # ชื่อโมเดลสำหรับสร้าง feedback
-FEEDBACK_MODEL_NAME = "gemini-2.0-flash-exp"
+# - For Gemini: "gemini-2.0-flash-exp", "gemini-1.5-pro", etc.
+# - For MedGemma: "google/medgemma-1.5-4b-it", "google/medgemma-27b-text-it"
+# - For Hugging Face: any model ID from huggingface.co
+FEEDBACK_MODEL_NAME = "google/medgemma-1.5-4b-it"
+
+# Fallback model when primary model fails
+# โมเดลสำรองเมื่อโมเดลหลักล้มเหลว
+FEEDBACK_FALLBACK_PROVIDER = "gemini"
+FEEDBACK_FALLBACK_MODEL = "gemini-2.0-flash-exp"
 
 # Temperature for response generation (0.0 = deterministic, 1.0 = creative)
 # อุณหภูมิสำหรับการสร้างคำตอบ (0.0 = แน่นอน, 1.0 = สร้างสรรค์)
 FEEDBACK_TEMPERATURE = 0.3
+
+# Max tokens for response / จำนวน token สูงสุดสำหรับคำตอบ
+FEEDBACK_MAX_TOKENS = 4096
+
+# =============================================================================
+# HUGGING FACE SETTINGS / การตั้งค่า Hugging Face
+# =============================================================================
+
+# Hugging Face Inference API endpoint type
+# ประเภท endpoint ของ Hugging Face Inference API
+# - "serverless": ใช้ Serverless Inference API (ฟรี แต่มี rate limit)
+# - "dedicated": ใช้ Dedicated Inference Endpoints (ต้องสร้าง endpoint เอง)
+HF_ENDPOINT_TYPE = "serverless"
+
+# For dedicated endpoints, specify the full URL
+# สำหรับ dedicated endpoints ระบุ URL เต็ม
+# Example: "https://xxxx.us-east-1.aws.endpoints.huggingface.cloud"
+HF_DEDICATED_ENDPOINT_URL = ""
+
+# Timeout for Hugging Face API calls (seconds)
+# Timeout สำหรับการเรียก Hugging Face API (วินาที)
+HF_API_TIMEOUT = 120
+
+# Retry settings for model loading (serverless models may need warm-up)
+# การตั้งค่า retry สำหรับการโหลดโมเดล (serverless อาจต้องรอ warm-up)
+HF_MAX_RETRIES = 3
+HF_RETRY_DELAY = 10  # seconds between retries
 
 # =============================================================================
 # OUTPUT FORMAT / รูปแบบผลลัพธ์

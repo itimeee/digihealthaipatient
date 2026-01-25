@@ -2,14 +2,16 @@
 Feedback Service / บริการสร้าง Feedback
 ========================================
 This module handles the generation of feedback using the configured model.
-Separated from app.py for easier maintenance and configuration.
+Supports multiple providers: Gemini, MedGemma (via Hugging Face), and generic Hugging Face models.
 
 โมดูลนี้จัดการการสร้าง feedback โดยใช้โมเดลที่กำหนดไว้
-แยกออกจาก app.py เพื่อให้ดูแลและปรับแต่งได้ง่ายขึ้น
+รองรับหลาย providers: Gemini, MedGemma (ผ่าน Hugging Face), และโมเดล Hugging Face ทั่วไป
 """
 
 import json
 import re
+import time
+import requests
 import streamlit as st
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
@@ -21,6 +23,14 @@ from feedback_config import (
     FEEDBACK_OUTPUT_FORMAT,
     FEEDBACK_SYSTEM_PROMPT,
     FEEDBACK_USER_PROMPT_TEMPLATE,
+    FEEDBACK_FALLBACK_PROVIDER,
+    FEEDBACK_FALLBACK_MODEL,
+    FEEDBACK_MAX_TOKENS,
+    HF_ENDPOINT_TYPE,
+    HF_DEDICATED_ENDPOINT_URL,
+    HF_API_TIMEOUT,
+    HF_MAX_RETRIES,
+    HF_RETRY_DELAY,
 )
 
 
@@ -133,15 +143,18 @@ def parse_json_response(text: str) -> dict:
     }
 
 
-def get_fallback_feedback() -> dict:
+def get_fallback_feedback(error_message: str = None) -> dict:
     """
     Return fallback feedback when API call fails.
     คืนค่า fallback feedback เมื่อเรียก API ไม่สำเร็จ
 
+    Args:
+        error_message: Optional error message to include
+
     Returns:
         Dictionary with is_fallback=True flag
     """
-    return {
+    result = {
         "is_fallback": True,
         "interview_feedback": {
             "strengths": ["ไม่สามารถประเมินได้ในขณะนี้"],
@@ -161,15 +174,19 @@ def get_fallback_feedback() -> dict:
             "overall_comment": "กรุณาลองใหม่อีกครั้ง"
         }
     }
+    if error_message:
+        result["error_message"] = error_message
+    return result
 
 
-def generate_feedback_gemini(payload: dict) -> dict:
+def generate_feedback_gemini(payload: dict, model_name: str = None) -> dict:
     """
     Generate feedback using Google Gemini API.
     สร้าง feedback โดยใช้ Google Gemini API
 
     Args:
         payload: Session data dictionary
+        model_name: Override model name (for fallback scenarios)
 
     Returns:
         Feedback dictionary with interview_feedback and clinical_feedback
@@ -179,13 +196,16 @@ def generate_feedback_gemini(payload: dict) -> dict:
         api_key = st.secrets.get("GEMINI_API_KEY")
         if not api_key:
             print("[ERROR] GEMINI_API_KEY not found in secrets")
-            return get_fallback_feedback()
+            return get_fallback_feedback("GEMINI_API_KEY not found")
 
         # Configure Gemini / ตั้งค่า Gemini
         genai.configure(api_key=api_key)
 
+        # Use provided model name or default / ใช้ชื่อโมเดลที่ให้มาหรือค่าเริ่มต้น
+        use_model = model_name or FEEDBACK_MODEL_NAME
+
         # Create model instance / สร้าง instance ของโมเดล
-        model = genai.GenerativeModel(FEEDBACK_MODEL_NAME)
+        model = genai.GenerativeModel(use_model)
 
         # Build prompt / สร้าง prompt
         user_prompt = build_feedback_prompt(payload)
@@ -196,7 +216,7 @@ def generate_feedback_gemini(payload: dict) -> dict:
         # Generation config / ตั้งค่าการสร้าง
         generation_config = {
             "temperature": FEEDBACK_TEMPERATURE,
-            "max_output_tokens": 4096,
+            "max_output_tokens": FEEDBACK_MAX_TOKENS,
         }
 
         # Safety settings - allow psychiatric content / ตั้งค่าความปลอดภัย - อนุญาตเนื้อหาจิตเวช
@@ -227,11 +247,11 @@ def generate_feedback_gemini(payload: dict) -> dict:
                         response_text += part.text
             except Exception as inner_e:
                 print(f"[ERROR] Failed to extract from parts: {inner_e}")
-                return get_fallback_feedback()
+                return get_fallback_feedback(str(inner_e))
 
         if not response_text or not response_text.strip():
             print("[ERROR] Empty response from Gemini")
-            return get_fallback_feedback()
+            return get_fallback_feedback("Empty response from Gemini")
 
         # Parse JSON response / แปลง JSON จากคำตอบ
         if FEEDBACK_OUTPUT_FORMAT == "json":
@@ -245,21 +265,177 @@ def generate_feedback_gemini(payload: dict) -> dict:
 
         # Add metadata / เพิ่ม metadata
         result["is_fallback"] = False
-        result["model_used"] = FEEDBACK_MODEL_NAME
+        result["model_used"] = use_model
+        result["provider"] = "gemini"
 
         return result
 
     except Exception as e:
         print(f"[ERROR] Gemini API error: {e}")
-        fallback = get_fallback_feedback()
-        fallback["error_message"] = str(e)
-        return fallback
+        return get_fallback_feedback(str(e))
+
+
+def generate_feedback_huggingface(payload: dict, model_id: str = None) -> dict:
+    """
+    Generate feedback using Hugging Face Inference API.
+    สร้าง feedback โดยใช้ Hugging Face Inference API
+
+    Supports both Serverless Inference API and Dedicated Inference Endpoints.
+    รองรับทั้ง Serverless Inference API และ Dedicated Inference Endpoints
+
+    Args:
+        payload: Session data dictionary
+        model_id: Override model ID (default uses FEEDBACK_MODEL_NAME)
+
+    Returns:
+        Feedback dictionary with interview_feedback and clinical_feedback
+    """
+    try:
+        # Get API token from secrets / ดึง API token จาก secrets
+        api_token = st.secrets.get("HF_API_TOKEN")
+        if not api_token:
+            print("[ERROR] HF_API_TOKEN not found in secrets")
+            return None  # Return None to trigger fallback
+
+        # Use provided model ID or default / ใช้ model ID ที่ให้มาหรือค่าเริ่มต้น
+        use_model = model_id or FEEDBACK_MODEL_NAME
+
+        # Determine API URL / กำหนด API URL
+        if HF_ENDPOINT_TYPE == "dedicated" and HF_DEDICATED_ENDPOINT_URL:
+            api_url = HF_DEDICATED_ENDPOINT_URL
+        else:
+            # Serverless Inference API
+            api_url = f"https://api-inference.huggingface.co/models/{use_model}"
+
+        # Build prompt / สร้าง prompt
+        user_prompt = build_feedback_prompt(payload)
+        full_prompt = f"{FEEDBACK_SYSTEM_PROMPT}\n\n---\n\n{user_prompt}"
+
+        # Prepare headers / เตรียม headers
+        headers = {
+            "Authorization": f"Bearer {api_token}",
+            "Content-Type": "application/json",
+        }
+
+        # Prepare payload for chat completion / เตรียม payload สำหรับ chat completion
+        # MedGemma uses chat format / MedGemma ใช้รูปแบบ chat
+        request_payload = {
+            "inputs": full_prompt,
+            "parameters": {
+                "max_new_tokens": FEEDBACK_MAX_TOKENS,
+                "temperature": FEEDBACK_TEMPERATURE,
+                "return_full_text": False,
+                "do_sample": True if FEEDBACK_TEMPERATURE > 0 else False,
+            }
+        }
+
+        # Make request with retry logic / ส่ง request พร้อม retry logic
+        response_text = None
+        last_error = None
+
+        for attempt in range(HF_MAX_RETRIES):
+            try:
+                print(f"[INFO] HuggingFace API attempt {attempt + 1}/{HF_MAX_RETRIES}")
+
+                response = requests.post(
+                    api_url,
+                    headers=headers,
+                    json=request_payload,
+                    timeout=HF_API_TIMEOUT
+                )
+
+                # Handle 503 - Model loading / จัดการ 503 - โมเดลกำลังโหลด
+                if response.status_code == 503:
+                    error_data = response.json()
+                    estimated_time = error_data.get("estimated_time", HF_RETRY_DELAY)
+                    print(f"[INFO] Model loading, waiting {estimated_time}s...")
+                    time.sleep(min(estimated_time, HF_RETRY_DELAY * 2))
+                    continue
+
+                # Handle other errors / จัดการ error อื่นๆ
+                if response.status_code != 200:
+                    last_error = f"HTTP {response.status_code}: {response.text[:200]}"
+                    print(f"[ERROR] HuggingFace API error: {last_error}")
+                    if attempt < HF_MAX_RETRIES - 1:
+                        time.sleep(HF_RETRY_DELAY)
+                    continue
+
+                # Parse response / แปลง response
+                result_data = response.json()
+
+                # Extract generated text / ดึงข้อความที่สร้าง
+                if isinstance(result_data, list) and len(result_data) > 0:
+                    # Standard format: [{"generated_text": "..."}]
+                    response_text = result_data[0].get("generated_text", "")
+                elif isinstance(result_data, dict):
+                    # Alternative format: {"generated_text": "..."}
+                    response_text = result_data.get("generated_text", "")
+
+                if response_text:
+                    break
+
+            except requests.exceptions.Timeout:
+                last_error = f"Request timeout after {HF_API_TIMEOUT}s"
+                print(f"[ERROR] {last_error}")
+                if attempt < HF_MAX_RETRIES - 1:
+                    time.sleep(HF_RETRY_DELAY)
+
+            except requests.exceptions.RequestException as e:
+                last_error = str(e)
+                print(f"[ERROR] Request error: {last_error}")
+                if attempt < HF_MAX_RETRIES - 1:
+                    time.sleep(HF_RETRY_DELAY)
+
+        # Check if we got a response / ตรวจสอบว่าได้ response หรือไม่
+        if not response_text:
+            print(f"[ERROR] No response after {HF_MAX_RETRIES} attempts")
+            return None  # Return None to trigger fallback
+
+        # Parse JSON response / แปลง JSON จากคำตอบ
+        if FEEDBACK_OUTPUT_FORMAT == "json":
+            result = parse_json_response(response_text)
+        else:
+            result = {
+                "raw_text": response_text,
+                "format": "markdown"
+            }
+
+        # Add metadata / เพิ่ม metadata
+        result["is_fallback"] = False
+        result["model_used"] = use_model
+        result["provider"] = "huggingface"
+
+        return result
+
+    except Exception as e:
+        print(f"[ERROR] HuggingFace API error: {e}")
+        return None  # Return None to trigger fallback
+
+
+def generate_feedback_medgemma(payload: dict) -> dict:
+    """
+    Generate feedback using MedGemma via Hugging Face.
+    สร้าง feedback โดยใช้ MedGemma ผ่าน Hugging Face
+
+    This is a wrapper that uses the HuggingFace function with MedGemma-specific settings.
+    นี่คือ wrapper ที่ใช้ฟังก์ชัน HuggingFace กับการตั้งค่าเฉพาะ MedGemma
+
+    Args:
+        payload: Session data dictionary
+
+    Returns:
+        Feedback dictionary or None if failed (triggers fallback)
+    """
+    return generate_feedback_huggingface(payload, model_id=FEEDBACK_MODEL_NAME)
 
 
 def generate_feedback(payload: dict) -> dict:
     """
     Main function to generate feedback using configured provider.
     ฟังก์ชันหลักสำหรับสร้าง feedback โดยใช้ provider ที่กำหนดไว้
+
+    Supports automatic fallback to Gemini if primary provider fails.
+    รองรับ fallback อัตโนมัติไปยัง Gemini หากผู้ให้บริการหลักล้มเหลว
 
     Args:
         payload: Session data dictionary containing:
@@ -278,15 +454,47 @@ def generate_feedback(payload: dict) -> dict:
             "interview_feedback": {...},
             "clinical_feedback": {...},
             "model_used": str (optional),
+            "provider": str (optional),
             "error_message": str (optional)
         }
     """
+    result = None
+
+    # Try primary provider / ลองผู้ให้บริการหลัก
     if FEEDBACK_PROVIDER == "gemini":
-        return generate_feedback_gemini(payload)
+        result = generate_feedback_gemini(payload)
+
+    elif FEEDBACK_PROVIDER == "medgemma":
+        print(f"[INFO] Using MedGemma provider: {FEEDBACK_MODEL_NAME}")
+        result = generate_feedback_medgemma(payload)
+
+    elif FEEDBACK_PROVIDER == "huggingface":
+        print(f"[INFO] Using HuggingFace provider: {FEEDBACK_MODEL_NAME}")
+        result = generate_feedback_huggingface(payload)
+
     else:
-        # Future: Add support for other providers / อนาคต: เพิ่มการรองรับ provider อื่น
-        print(f"[WARNING] Unknown provider: {FEEDBACK_PROVIDER}, using fallback")
-        return get_fallback_feedback()
+        print(f"[WARNING] Unknown provider: {FEEDBACK_PROVIDER}")
+
+    # Check if primary succeeded / ตรวจสอบว่าผู้ให้บริการหลักสำเร็จหรือไม่
+    if result and not result.get("is_fallback"):
+        return result
+
+    # Try fallback provider if configured / ลอง fallback provider หากกำหนดไว้
+    if FEEDBACK_FALLBACK_PROVIDER and FEEDBACK_FALLBACK_PROVIDER != FEEDBACK_PROVIDER:
+        print(f"[INFO] Primary provider failed, trying fallback: {FEEDBACK_FALLBACK_PROVIDER}")
+
+        if FEEDBACK_FALLBACK_PROVIDER == "gemini":
+            fallback_result = generate_feedback_gemini(payload, model_name=FEEDBACK_FALLBACK_MODEL)
+            if fallback_result and not fallback_result.get("is_fallback"):
+                fallback_result["used_fallback"] = True
+                fallback_result["original_provider"] = FEEDBACK_PROVIDER
+                return fallback_result
+
+    # Return the result or fallback / คืนค่าผลลัพธ์หรือ fallback
+    if result:
+        return result
+
+    return get_fallback_feedback("All providers failed")
 
 
 def format_transcript_for_display(chat_history: list) -> str:
