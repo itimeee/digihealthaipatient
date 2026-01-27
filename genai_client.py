@@ -12,8 +12,21 @@ This module provides:
 
 import os
 import streamlit as st
-from google import genai
-from google.genai import types
+
+# Import google-genai SDK with helpful error message
+# นำเข้า google-genai SDK พร้อมข้อความ error ที่ช่วยแก้ปัญหา
+try:
+    from google import genai
+    from google.genai import types
+except ImportError as e:
+    raise ImportError(
+        f"Failed to import google-genai SDK: {e}\n\n"
+        "Please install the correct package:\n"
+        "  pip uninstall google-generativeai  # Remove old package if installed\n"
+        "  pip install google-genai>=1.0.0    # Install new SDK\n\n"
+        "Or reinstall all requirements:\n"
+        "  pip install -r requirements.txt"
+    ) from e
 
 
 # =============================================================================
