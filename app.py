@@ -8,7 +8,6 @@ import streamlit.components.v1 as components
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
-import asyncio
 import threading
 import time
 import re
@@ -20,7 +19,7 @@ from cases import ALL_CASES, get_case_by_name
 # Import GenAI client and model config / นำเข้า GenAI client และการตั้งค่าโมเดล
 from genai_client import (
     get_client,
-    generate_content_async,
+    generate_content_sync,
     extract_text,
     is_response_blocked,
     build_generation_config,
@@ -333,22 +332,26 @@ def sanitize_patient_output(text: str) -> str:
     return cleaned_text
 
 
-async def get_ai_response_async(chat_history, case_context):
+def get_ai_response_sync(chat_history, case_context):
     """
-    Get response from Gemini AI using case-specific configuration (async)
-    รับคำตอบจาก Gemini AI โดยใช้การตั้งค่าเฉพาะของเคส (แบบ async)
+    Get response from Gemini AI using case-specific configuration (sync).
+    รับคำตอบจาก Gemini AI โดยใช้การตั้งค่าเฉพาะของเคส (แบบ sync)
 
-    Uses the new google-genai SDK with proper async support.
-    ใช้ google-genai SDK ใหม่พร้อมการรองรับ async ที่เหมาะสม
+    Uses synchronous generation to avoid asyncio event loop issues.
+    ใช้การสร้างแบบ synchronous เพื่อหลีกเลี่ยงปัญหา asyncio event loop
 
     Args:
         chat_history: List of previous messages / ประวัติการสนทนา
         case_context: Case information for context / ข้อมูลเคสสำหรับบริบท
+
+    Returns:
+        AI response text or fallback message
     """
     try:
         # Validate client first / ตรวจสอบ client ก่อน
         is_valid, error_msg = validate_genai_client()
         if not is_valid:
+            st.session_state.last_model_error = error_msg
             return f"AI model is not available: {error_msg}"
 
         # Get case-specific model, prompt, and temperature from session state
@@ -374,7 +377,7 @@ async def get_ai_response_async(chat_history, case_context):
 
         # Attempt 1: Try with current prompt / พยายามครั้งที่ 1
         try:
-            response_text = await generate_content_async(
+            response_text = generate_content_sync(
                 model=case_model,
                 contents=full_prompt,
                 temperature=case_temperature,
@@ -403,7 +406,7 @@ async def get_ai_response_async(chat_history, case_context):
                 safer_prompt += "Patient: "
 
                 try:
-                    response_text = await generate_content_async(
+                    response_text = generate_content_sync(
                         model=case_model,
                         contents=safer_prompt,
                         temperature=case_temperature,
@@ -433,28 +436,30 @@ async def get_ai_response_async(chat_history, case_context):
     except Exception as e:
         error_msg = str(e)
         st.session_state.last_model_error = error_msg
-        print(f"[ERROR] get_ai_response_async failed: {error_msg}")
-        return f"ขอโทษค่ะ ระบบมีปัญหา: {error_msg}"
+        print(f"[ERROR] get_ai_response_sync failed: {error_msg}")
+        return FALLBACK_RESPONSE_GENERIC
 
 
 def get_ai_response_threaded(chat_history, case_context):
     """
-    Wrapper function to run async AI response in a thread-safe way
-    ฟังก์ชันห่อหุ้มเพื่อเรียก AI แบบ async ในเธรดแยก
+    Wrapper function to run AI response in a background thread.
+    ฟังก์ชันห่อหุ้มเพื่อเรียก AI ในเธรดพื้นหลัง
 
-    This allows the timer fragment to continue updating while waiting for AI response
+    Uses synchronous generation (no asyncio) to avoid event loop issues.
+    ใช้การสร้างแบบ synchronous (ไม่ใช้ asyncio) เพื่อหลีกเลี่ยงปัญหา event loop
+
+    This allows the timer fragment to continue updating while waiting for AI response.
     ทำให้ตัวจับเวลายังคงอัพเดทต่อได้ขณะรอคำตอบจาก AI
     """
     try:
-        # Run the async function in a new event loop
-        # รันฟังก์ชัน async ใน event loop ใหม่
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        result = loop.run_until_complete(get_ai_response_async(chat_history, case_context))
-        loop.close()
-        return result
+        # Call sync function directly - no asyncio event loop needed
+        # เรียกฟังก์ชัน sync โดยตรง - ไม่ต้องใช้ asyncio event loop
+        return get_ai_response_sync(chat_history, case_context)
     except Exception as e:
-        return f"I'm sorry, I'm having trouble responding right now. Error: {e}"
+        error_msg = str(e)
+        st.session_state.last_model_error = error_msg
+        print(f"[ERROR] get_ai_response_threaded failed: {error_msg}")
+        return FALLBACK_RESPONSE_GENERIC
 
 
 # ============================================================================
