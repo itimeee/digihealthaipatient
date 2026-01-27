@@ -14,7 +14,8 @@ Edit this file to change model settings without modifying app.py.
 
 # Default model for patient simulation (used when case config doesn't specify)
 # โมเดลเริ่มต้นสำหรับจำลองผู้ป่วย (ใช้เมื่อการตั้งค่าเคสไม่ได้ระบุ)
-DEFAULT_CASE_MODEL = "gemini-2.0-flash-exp"
+# Using gemini-2.5-flash as default (stable, fast, cost-effective)
+DEFAULT_CASE_MODEL = "gemini-2.5-flash"
 
 # Default temperature for patient simulation
 # อุณหภูมิเริ่มต้นสำหรับจำลองผู้ป่วย
@@ -28,32 +29,36 @@ DEFAULT_CASE_MAX_TOKENS = 2048
 # MODEL NAME MAPPING / การแมปชื่อโมเดล
 # =============================================================================
 
-# Map old/invalid model names to valid ones
-# แมปชื่อโมเดลเก่า/ไม่ถูกต้องไปยังชื่อที่ถูกต้อง
+# Map old/invalid model names to valid ones (if needed)
+# แมปชื่อโมเดลเก่า/ไม่ถูกต้องไปยังชื่อที่ถูกต้อง (ถ้าจำเป็น)
 MODEL_NAME_MAPPING = {
-    # Legacy/preview models -> stable equivalents
-    "gemini-3-flash-preview": "gemini-2.0-flash-exp",
-    "gemini-2.5-flash": "gemini-2.0-flash-exp",
-    "gemini-2.5-flash-lite": "gemini-2.0-flash-exp",
-    "gemini-2.5-pro": "gemini-1.5-pro",
-
-    # Keep valid models as-is
-    "gemini-2.0-flash-exp": "gemini-2.0-flash-exp",
-    "gemini-1.5-flash": "gemini-1.5-flash",
-    "gemini-1.5-pro": "gemini-1.5-pro",
-    "gemini-pro": "gemini-pro",
+    # Legacy models only - modern models are kept as-is
+    "gemini-pro": "gemini-1.5-pro",
 }
 
 # List of known valid model names (for validation)
 # รายชื่อโมเดลที่ถูกต้อง (สำหรับการตรวจสอบ)
+# Updated January 2025 - https://ai.google.dev/gemini-api/docs/models
 VALID_MODEL_NAMES = [
+    # Gemini 3 (Preview) - Latest 2025
+    "gemini-3-flash-preview",
+    "gemini-3-pro-preview",
+
+    # Gemini 2.5 (Stable) - 2025
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-pro",
+
+    # Gemini 2.0 (Experimental)
     "gemini-2.0-flash-exp",
+    "gemini-2.0-flash",
+
+    # Gemini 1.5 (Stable)
     "gemini-1.5-flash",
     "gemini-1.5-flash-latest",
     "gemini-1.5-flash-8b",
     "gemini-1.5-pro",
     "gemini-1.5-pro-latest",
-    "gemini-pro",
 ]
 
 
