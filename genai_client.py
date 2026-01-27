@@ -31,18 +31,30 @@ def get_api_key() -> str:
     Raises:
         ValueError: If API key is not found
     """
+    api_key = None
+
     # Try Streamlit secrets first / ลอง Streamlit secrets ก่อน
     try:
+        # Method 1: Direct access (preferred)
+        if "GEMINI_API_KEY" in st.secrets:
+            api_key = st.secrets["GEMINI_API_KEY"]
+            if api_key and str(api_key).strip():
+                return str(api_key).strip()
+    except Exception as e:
+        print(f"[DEBUG] st.secrets direct access failed: {e}")
+
+    try:
+        # Method 2: Using .get()
         api_key = st.secrets.get("GEMINI_API_KEY")
-        if api_key:
-            return api_key
-    except Exception:
-        pass
+        if api_key and str(api_key).strip():
+            return str(api_key).strip()
+    except Exception as e:
+        print(f"[DEBUG] st.secrets.get() failed: {e}")
 
     # Fallback to environment variable / ใช้ environment variable แทน
     api_key = os.environ.get("GEMINI_API_KEY")
-    if api_key:
-        return api_key
+    if api_key and str(api_key).strip():
+        return str(api_key).strip()
 
     raise ValueError(
         "GEMINI_API_KEY not found. Please set it in:\n"
@@ -57,7 +69,6 @@ def get_api_key() -> str:
 # =============================================================================
 
 _client_instance = None
-_client_error = None
 
 
 def get_client() -> genai.Client:
@@ -65,26 +76,27 @@ def get_client() -> genai.Client:
     Get or create GenAI client singleton.
     รับหรือสร้าง GenAI client แบบ singleton
 
+    Note: Does NOT cache errors - will retry on each call if previous attempt failed.
+    หมายเหตุ: ไม่เก็บ error ไว้ - จะลองใหม่ทุกครั้งถ้าครั้งก่อนล้มเหลว
+
     Returns:
         genai.Client instance
 
     Raises:
         ValueError: If client initialization fails
     """
-    global _client_instance, _client_error
+    global _client_instance
 
     if _client_instance is not None:
         return _client_instance
 
-    if _client_error is not None:
-        raise ValueError(_client_error)
-
     try:
         api_key = get_api_key()
         _client_instance = genai.Client(api_key=api_key)
+        print(f"[DEBUG] GenAI client initialized successfully")
         return _client_instance
     except Exception as e:
-        _client_error = str(e)
+        print(f"[ERROR] Failed to initialize GenAI client: {e}")
         raise ValueError(f"Failed to initialize GenAI client: {e}")
 
 
@@ -93,9 +105,8 @@ def reset_client():
     Reset client singleton (useful for testing or re-initialization).
     รีเซ็ต client singleton (ใช้สำหรับทดสอบหรือเริ่มต้นใหม่)
     """
-    global _client_instance, _client_error
+    global _client_instance
     _client_instance = None
-    _client_error = None
 
 
 # =============================================================================
