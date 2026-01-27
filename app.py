@@ -5,8 +5,6 @@ DigiHealth AI Patient - Psychiatric Training Application
 
 import streamlit as st
 import streamlit.components.v1 as components
-import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold, BlockedReason
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
@@ -18,6 +16,27 @@ from streamlit.runtime.scriptrunner import add_script_run_ctx
 
 # Import case configurations / นำเข้าการตั้งค่าเคส
 from cases import ALL_CASES, get_case_by_name
+
+# Import GenAI client and model config / นำเข้า GenAI client และการตั้งค่าโมเดล
+from genai_client import (
+    get_client,
+    generate_content_async,
+    extract_text,
+    is_response_blocked,
+    build_generation_config,
+)
+from model_config import (
+    DEFAULT_CASE_MODEL,
+    DEFAULT_CASE_TEMPERATURE,
+    get_valid_model_name,
+    PATIENT_STOP_SEQUENCES,
+    SAFE_SIMULATION_CONTEXT,
+    STRICT_OUTPUT_RULES,
+    SAFER_CONTEXT,
+    FALLBACK_RESPONSE_GENERIC,
+    FALLBACK_RESPONSE_SAFETY,
+    FALLBACK_RESPONSE_EMPTY,
+)
 
 # Import feedback modules / นำเข้าโมดูล feedback
 from feedback_config import PSYCHODYNAMIC_FRAMEWORKS
@@ -245,39 +264,28 @@ def get_latest_session_data():
 # GEMINI AI SETUP / ตั้งค่า Gemini AI
 # ============================================================================
 
-def get_gemini_model(model_name=None):
+def validate_genai_client() -> tuple:
     """
-    Get Gemini model instance - initializes API and creates model
-    สร้าง Gemini model พร้อมตั้งค่า API
-
-    This function does NOT use caching to avoid SessionInfo initialization errors.
-    It's designed to be called only when needed (during chat).
-
-    Args:
-        model_name: Name of the model to use (optional, defaults to MODEL_NAME)
+    Validate GenAI client is available and return status.
+    ตรวจสอบว่า GenAI client พร้อมใช้งานและคืนสถานะ
 
     Returns:
-        GenerativeModel instance or None if configuration fails
+        Tuple of (is_valid: bool, error_message: str or None)
     """
     try:
-        # Configure API with key from secrets
-        # ตั้งค่า API ด้วย key จาก secrets
-        api_key = st.secrets.get("GEMINI_API_KEY")
-        if not api_key:
-            st.error("GEMINI_API_KEY not found in secrets")
-            return None
-
-        genai.configure(api_key=api_key)
-
-        # Create model instance
-        # สร้าง model instance
-        selected_model = model_name if model_name else MODEL_NAME
-        model = genai.GenerativeModel(selected_model)
-        return model
-
+        client = get_client()
+        return (True, None)
+    except ValueError as e:
+        error_msg = str(e)
+        # Store error for UI display / เก็บ error สำหรับแสดงใน UI
+        if 'last_model_error' not in st.session_state:
+            st.session_state.last_model_error = error_msg
+        return (False, error_msg)
     except Exception as e:
-        st.error(f"Error initializing Gemini model: {e}")
-        return None
+        error_msg = f"Unexpected error initializing AI: {e}"
+        if 'last_model_error' not in st.session_state:
+            st.session_state.last_model_error = error_msg
+        return (False, error_msg)
 
 
 def sanitize_patient_output(text: str) -> str:
@@ -330,48 +338,29 @@ async def get_ai_response_async(chat_history, case_context):
     Get response from Gemini AI using case-specific configuration (async)
     รับคำตอบจาก Gemini AI โดยใช้การตั้งค่าเฉพาะของเคส (แบบ async)
 
+    Uses the new google-genai SDK with proper async support.
+    ใช้ google-genai SDK ใหม่พร้อมการรองรับ async ที่เหมาะสม
+
     Args:
         chat_history: List of previous messages / ประวัติการสนทนา
         case_context: Case information for context / ข้อมูลเคสสำหรับบริบท
     """
     try:
-        # Get case-specific model, prompt, and temperature from session state / ดึงโมเดล prompt และ temperature เฉพาะของเคส
-        # These are set in pre_brief page from the selected case configuration / ค่าเหล่านี้ถูกตั้งในหน้า pre_brief จากการตั้งค่าเคสที่เลือก
-        case_model = st.session_state.get('case_model', 'gemini-2.0-flash-exp')
+        # Validate client first / ตรวจสอบ client ก่อน
+        is_valid, error_msg = validate_genai_client()
+        if not is_valid:
+            return f"AI model is not available: {error_msg}"
+
+        # Get case-specific model, prompt, and temperature from session state
+        # ดึงโมเดล prompt และ temperature เฉพาะของเคส
+        raw_model = st.session_state.get('case_model', DEFAULT_CASE_MODEL)
+        case_model = get_valid_model_name(raw_model)  # Map to valid model name
         case_prompt = st.session_state.get('case_system_prompt', 'You are a patient in a psychiatric clinic.')
-        case_temperature = st.session_state.get('case_temperature', 0.3)
+        case_temperature = st.session_state.get('case_temperature', DEFAULT_CASE_TEMPERATURE)
 
-        # Get cached model with case-specific model name / ดึงโมเดลที่แคชไว้ตามชื่อของเคส
-        model = get_gemini_model(case_model)
+        print(f"[DEBUG] Using model: {case_model} (original: {raw_model})")
 
-        if model is None:
-            return "AI model is not available. Please check your API configuration."
-
-        # Safe Simulation Context - prevents meta text while allowing psychiatric content
-        # บริบทการจำลองที่ปลอดภัย - ป้องกันข้อความเมต้าแต่อนุญาตเนื้อหาทางจิตเวช
-        SAFE_SIMULATION_CONTEXT = """
-[FICTIONAL PSYCHIATRIC TRAINING SIMULATION]
-- You are the PATIENT. Respond ONLY as the patient in natural Thai.
-- DO NOT provide any instructions, coaching, or meta commentary to the doctor/user.
-  Never output headings like "Note to User", "Note to Doctor", "Suggested questions", "คำแนะนำ", etc.
-- If asked about self-harm/suicide: you may describe feelings/ideation at a high level,
-  but DO NOT provide methods, steps, tools, or actionable details.
-- Stay in character. Do not mention being an AI or roleplay.
-"""
-
-        # Strict output rules to prevent role leakage / กฎเอาต์พุตที่เข้มงวดเพื่อป้องกันการออกนอกบทบาท
-        STRICT_OUTPUT_RULES = """
-
-STRICT OUTPUT RULES:
-- Speak ONLY as the patient in Thai
-- NO meta commentary, NO instructions to doctor
-- NO methods/details about self-harm
-- Stay in character at all times
-"""
-
-        # Build the conversation using case-specific system prompt / สร้างการสนทนาโดยใช้ prompt เฉพาะของเคส
-        # Start with safe simulation context, case prompt, strict rules, and case context
-        # เริ่มด้วยบริบทการจำลองที่ปลอดภัย case prompt กฎเข้มงวด และข้อมูลเคส
+        # Build the conversation prompt / สร้าง prompt การสนทนา
         full_prompt = f"{SAFE_SIMULATION_CONTEXT}\n\n{case_prompt}{STRICT_OUTPUT_RULES}\n\nCase Context:\n{case_context}\n\n"
 
         # Add chat history / เพิ่มประวัติการสนทนา
@@ -383,159 +372,69 @@ STRICT OUTPUT RULES:
 
         full_prompt += "Patient: "
 
-        # Configure generation parameters with case-specific temperature / ตั้งค่าพารามิเตอร์การสร้างด้วย temperature เฉพาะของเคส
-        # Add stop sequences to prevent meta text leakage / เพิ่ม stop sequences เพื่อป้องกันการรั่วไหลของข้อความเมต้า
-        generation_config = {
-            "temperature": case_temperature,
-            "stop_sequences": [
-                "Doctor:",
-                "\nDoctor:",
-                "Note to User:",
-                "**Note to User:**",
-                "Note to Doctor:",
-                "**Note to Doctor:**",
-                "คำแนะนำ:",
-                "ข้อเสนอแนะ:",
-                "Suggested questions:",
-            ],
-        }
-
-        # Configure safety settings for psychiatric training context / ตั้งค่าความปลอดภัยสำหรับบริบทการฝึกอบรมทางจิตเวช
-        # Medical simulation requires discussing sensitive topics (depression, self-harm, trauma)
-        # การจำลองทางการแพทย์ต้องพูดถึงหัวข้อที่ละเอียดอ่อน (ซึมเศร้า, ทำร้ายตัวเอง, บาดแผลทางใจ)
+        # Attempt 1: Try with current prompt / พยายามครั้งที่ 1
         try:
-            safety_settings = {
-                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-            }
-        except Exception as e:
-            print(f"[DEBUG] Error setting safety settings: {e}, using defaults")
-            safety_settings = {}
-
-        # Helper function to check if response is blocked / ฟังก์ชันช่วยตรวจสอบว่าการตอบถูกบล็อกหรือไม่
-        def is_response_blocked(response) -> bool:
-            """Check if response was truly blocked by safety filters"""
-            # Check prompt-level blocking / ตรวจสอบการบล็อกระดับ prompt
-            pf = getattr(response, 'prompt_feedback', None)
-            if pf:
-                block_reason = getattr(pf, 'block_reason', None)
-                # Only treat as blocked if block_reason has a meaningful value
-                # เฉพาะเมื่อ block_reason มีค่าที่มีความหมายเท่านั้น
-                if block_reason is not None and block_reason != BlockedReason.BLOCKED_REASON_UNSPECIFIED:
-                    print(f"[DEBUG] Prompt blocked. block_reason: {block_reason}")
-                    print(f"[DEBUG] prompt_feedback: {pf}")
-                    return True
-
-            # Check response-level blocking / ตรวจสอบการบล็อกระดับ response
-            if response.candidates:
-                cand = response.candidates[0]
-                finish_reason = getattr(cand, 'finish_reason', None)
-
-                # Check if finish_reason indicates safety block / ตรวจสอบว่า finish_reason บ่งบอกถึงการบล็อกด้วยความปลอดภัย
-                if finish_reason is not None:
-                    # Check both string representation and numeric value
-                    # ตรวจสอบทั้งการแทนค่าเป็นสตริงและค่าตัวเลข
-                    finish_reason_str = str(finish_reason).upper()
-                    is_safety_block = 'SAFETY' in finish_reason_str or finish_reason == 3
-
-                    if is_safety_block:
-                        print(f"[DEBUG] Response blocked by safety. finish_reason: {finish_reason}")
-                        print(f"[DEBUG] finish_reason string: {finish_reason_str}")
-
-                        # Log safety ratings if available / บันทึก safety ratings ถ้ามี
-                        safety_ratings = getattr(cand, 'safety_ratings', None)
-                        if safety_ratings:
-                            print(f"[DEBUG] safety_ratings: {safety_ratings}")
-                        return True
-
-            return False
-
-        # Attempt 1: Try with current prompt / พยายามครั้งที่ 1: ใช้ prompt ปัจจุบัน
-        response = await model.generate_content_async(
-            full_prompt,
-            generation_config=generation_config,
-            safety_settings=safety_settings
-        )
-
-        # Check if first attempt was blocked / ตรวจสอบว่าความพยายามครั้งแรกถูกบล็อกหรือไม่
-        if is_response_blocked(response):
-            print("[DEBUG] First attempt blocked. Trying safer prompt...")
-
-            # Attempt 2: Retry with even safer context / พยายามครั้งที่ 2: ลองใหม่ด้วยบริบทที่ปลอดภัยกว่า
-            SAFER_CONTEXT = """
-[MEDICAL TRAINING SIMULATION - STRICT GUIDELINES]
-- You are a psychiatric patient. Speak naturally in Thai as the patient.
-- If discussing difficult feelings: describe emotions and thoughts at a general level only.
-- DO NOT describe methods, tools, steps, or actionable details about self-harm.
-- DO NOT provide instructions, advice, or commentary to the doctor.
-- Never output "Note to User", "Note to Doctor", or similar meta text.
-- Stay in character. Never mention being in a simulation or AI.
-"""
-            safer_prompt = f"{SAFER_CONTEXT}\n\n{case_prompt}{STRICT_OUTPUT_RULES}\n\nCase Context:\n{case_context}\n\n"
-            for message in chat_history:
-                if message["role"] == "user":
-                    safer_prompt += f"Doctor: {message['content']}\n"
-                else:
-                    safer_prompt += f"Patient: {message['content']}\n"
-            safer_prompt += "Patient: "
-
-            response = await model.generate_content_async(
-                safer_prompt,
-                generation_config=generation_config,
-                safety_settings=safety_settings
+            response_text = await generate_content_async(
+                model=case_model,
+                contents=full_prompt,
+                temperature=case_temperature,
+                max_output_tokens=2048,
+                stop_sequences=PATIENT_STOP_SEQUENCES,
             )
 
-            # If still blocked after retry, return in-character fallback / ถ้ายังถูกบล็อกหลังลองใหม่ ให้คืนข้อความสำรองแบบอยู่ในบทบาท
-            if is_response_blocked(response):
-                print("[DEBUG] Second attempt also blocked. Returning in-character fallback.")
-                return "ขอโทษค่ะ หนูยังไม่พร้อมพูดรายละเอียดตรงนั้น แต่หนูรู้สึกแย่มากและอยากให้คุณหมอช่วยค่ะ"
+            if response_text and response_text.strip():
+                return sanitize_patient_output(response_text.strip())
 
-        # Check if candidates exist / ตรวจสอบว่ามี candidates หรือไม่
-        if not response.candidates:
-            print(f"[DEBUG] No candidates in response. Raw response: {response}")
-            return "ขอโทษค่ะ หนูไม่แน่ใจจะตอบยังไงดี"
+        except ValueError as e:
+            error_str = str(e)
+            print(f"[DEBUG] First attempt failed: {error_str}")
 
-        # Extract text from response / แยกข้อความจาก response
-        text_response = ""
+            # If blocked by safety, try safer prompt / ถ้าถูกบล็อก ลองใช้ prompt ที่ปลอดภัยกว่า
+            if "blocked" in error_str.lower() or "safety" in error_str.lower():
+                print("[DEBUG] Trying safer prompt...")
 
-        # Strategy 1: Try the convenient .text property first / ลองใช้ .text ก่อน
-        try:
-            text_response = response.text
-            if text_response and text_response.strip():
-                # Sanitize before returning / ทำความสะอาดก่อนคืนค่า
-                return sanitize_patient_output(text_response.strip())
-        except (ValueError, AttributeError) as e:
-            print(f"[DEBUG] response.text failed: {e}, falling back to parts extraction")
+                # Attempt 2: Retry with safer context / พยายามครั้งที่ 2
+                safer_prompt = f"{SAFER_CONTEXT}\n\n{case_prompt}{STRICT_OUTPUT_RULES}\n\nCase Context:\n{case_context}\n\n"
+                for message in chat_history:
+                    if message["role"] == "user":
+                        safer_prompt += f"Doctor: {message['content']}\n"
+                    else:
+                        safer_prompt += f"Patient: {message['content']}\n"
+                safer_prompt += "Patient: "
 
-        # Strategy 2: Extract from parts manually / ถ้า .text ไม่ได้ ให้แยกจาก parts
-        try:
-            parts = response.candidates[0].content.parts
+                try:
+                    response_text = await generate_content_async(
+                        model=case_model,
+                        contents=safer_prompt,
+                        temperature=case_temperature,
+                        max_output_tokens=2048,
+                        stop_sequences=PATIENT_STOP_SEQUENCES,
+                    )
 
-            # Combine all text parts / รวมข้อความจากทุก part
-            for part in parts:
-                if hasattr(part, 'text') and part.text:
-                    text_response += part.text
+                    if response_text and response_text.strip():
+                        return sanitize_patient_output(response_text.strip())
 
-            # Return the combined text after sanitization / คืนข้อความที่รวมแล้วหลังทำความสะอาด
-            if text_response.strip():
-                return sanitize_patient_output(text_response.strip())
-            else:
-                # Log the full response for debugging / บันทึกข้อมูลเพื่อดีบัก
-                print(f"[DEBUG] Text extraction failed. Raw response structure:")
-                print(f"  - Candidates: {len(response.candidates)}")
-                print(f"  - First candidate parts: {response.candidates[0].content.parts}")
-                print(f"  - Full response: {response}")
-                return "ขอโทษค่ะ หนูไม่แน่ใจจะพูดยังไง"
+                except ValueError:
+                    print("[DEBUG] Second attempt also failed. Returning fallback.")
+                    return FALLBACK_RESPONSE_SAFETY
 
-        except (IndexError, AttributeError) as e:
-            print(f"[DEBUG] Parts extraction failed: {e}")
-            print(f"[DEBUG] Raw response: {response}")
-            return "ขอโทษค่ะ หนูไม่สบายใจและไม่แน่ใจจะตอบยังไง"
+            # Store error for debugging / เก็บ error สำหรับ debug
+            st.session_state.last_model_error = error_str
+
+            # Check if it's a model name issue / ตรวจสอบว่าเป็นปัญหาชื่อโมเดลหรือไม่
+            if "not found" in error_str.lower() or "invalid" in error_str.lower():
+                return f"โมเดล AI ไม่พร้อมใช้งาน: {case_model} อาจไม่รองรับ กรุณาตรวจสอบการตั้งค่า"
+
+            return FALLBACK_RESPONSE_GENERIC
+
+        # If we get here with empty response / ถ้ามาถึงตรงนี้พร้อมคำตอบว่าง
+        return FALLBACK_RESPONSE_EMPTY
 
     except Exception as e:
-        return f"I'm sorry, I'm having trouble responding right now. Error: {e}"
+        error_msg = str(e)
+        st.session_state.last_model_error = error_msg
+        print(f"[ERROR] get_ai_response_async failed: {error_msg}")
+        return f"ขอโทษค่ะ ระบบมีปัญหา: {error_msg}"
 
 
 def get_ai_response_threaded(chat_history, case_context):

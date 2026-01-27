@@ -13,8 +13,14 @@ import re
 import time
 import requests
 import streamlit as st
-import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
+
+# Import GenAI client for Gemini / นำเข้า GenAI client สำหรับ Gemini
+from genai_client import (
+    get_client,
+    generate_content_sync,
+    extract_text,
+)
+from model_config import get_valid_model_name
 
 from feedback_config import (
     FEEDBACK_PROVIDER,
@@ -181,8 +187,8 @@ def get_fallback_feedback(error_message: str = None) -> dict:
 
 def generate_feedback_gemini(payload: dict, model_name: str = None) -> dict:
     """
-    Generate feedback using Google Gemini API.
-    สร้าง feedback โดยใช้ Google Gemini API
+    Generate feedback using Google Gemini API (new google-genai SDK).
+    สร้าง feedback โดยใช้ Google Gemini API (google-genai SDK ใหม่)
 
     Args:
         payload: Session data dictionary
@@ -192,20 +198,19 @@ def generate_feedback_gemini(payload: dict, model_name: str = None) -> dict:
         Feedback dictionary with interview_feedback and clinical_feedback
     """
     try:
-        # Get API key from secrets / ดึง API key จาก secrets
-        api_key = st.secrets.get("GEMINI_API_KEY")
-        if not api_key:
-            print("[ERROR] GEMINI_API_KEY not found in secrets")
-            return get_fallback_feedback("GEMINI_API_KEY not found")
+        # Validate client / ตรวจสอบ client
+        try:
+            get_client()
+        except ValueError as e:
+            print(f"[ERROR] GenAI client error: {e}")
+            return get_fallback_feedback(str(e))
 
-        # Configure Gemini / ตั้งค่า Gemini
-        genai.configure(api_key=api_key)
+        # Use provided model name or default, with validation
+        # ใช้ชื่อโมเดลที่ให้มาหรือค่าเริ่มต้น พร้อมการตรวจสอบ
+        raw_model = model_name or FEEDBACK_MODEL_NAME
+        use_model = get_valid_model_name(raw_model)
 
-        # Use provided model name or default / ใช้ชื่อโมเดลที่ให้มาหรือค่าเริ่มต้น
-        use_model = model_name or FEEDBACK_MODEL_NAME
-
-        # Create model instance / สร้าง instance ของโมเดล
-        model = genai.GenerativeModel(use_model)
+        print(f"[INFO] Generating feedback with model: {use_model}")
 
         # Build prompt / สร้าง prompt
         user_prompt = build_feedback_prompt(payload)
@@ -213,41 +218,17 @@ def generate_feedback_gemini(payload: dict, model_name: str = None) -> dict:
         # Combine system and user prompts / รวม system และ user prompts
         full_prompt = f"{FEEDBACK_SYSTEM_PROMPT}\n\n---\n\n{user_prompt}"
 
-        # Generation config / ตั้งค่าการสร้าง
-        generation_config = {
-            "temperature": FEEDBACK_TEMPERATURE,
-            "max_output_tokens": FEEDBACK_MAX_TOKENS,
-        }
-
-        # Safety settings - allow psychiatric content / ตั้งค่าความปลอดภัย - อนุญาตเนื้อหาจิตเวช
-        safety_settings = {
-            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-        }
-
-        # Generate response / สร้างคำตอบ
-        response = model.generate_content(
-            full_prompt,
-            generation_config=generation_config,
-            safety_settings=safety_settings,
-        )
-
-        # Extract text from response / ดึงข้อความจากคำตอบ
+        # Generate response using new SDK / สร้างคำตอบโดยใช้ SDK ใหม่
         try:
-            response_text = response.text
-        except (ValueError, AttributeError) as e:
-            print(f"[ERROR] Failed to get response.text: {e}")
-            # Try to extract from parts / ลองดึงจาก parts
-            try:
-                response_text = ""
-                for part in response.candidates[0].content.parts:
-                    if hasattr(part, 'text') and part.text:
-                        response_text += part.text
-            except Exception as inner_e:
-                print(f"[ERROR] Failed to extract from parts: {inner_e}")
-                return get_fallback_feedback(str(inner_e))
+            response_text = generate_content_sync(
+                model=use_model,
+                contents=full_prompt,
+                temperature=FEEDBACK_TEMPERATURE,
+                max_output_tokens=FEEDBACK_MAX_TOKENS,
+            )
+        except ValueError as e:
+            print(f"[ERROR] Generation failed: {e}")
+            return get_fallback_feedback(str(e))
 
         if not response_text or not response_text.strip():
             print("[ERROR] Empty response from Gemini")
