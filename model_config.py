@@ -95,15 +95,13 @@ def get_valid_model_name(model_name: str) -> str:
 
 # Stop sequences to prevent meta text leakage in patient simulation
 # ลำดับหยุดเพื่อป้องกันการรั่วไหลของข้อความเมต้าในการจำลองผู้ป่วย
+# Note: Gemini API allows maximum 5 stop sequences
+# หมายเหตุ: Gemini API อนุญาตสูงสุด 5 stop sequences
 PATIENT_STOP_SEQUENCES = [
     "Doctor:",
-    "\nDoctor:",
     "Note to User:",
-    "**Note to User:**",
     "Note to Doctor:",
-    "**Note to Doctor:**",
     "คำแนะนำ:",
-    "ข้อเสนอแนะ:",
     "Suggested questions:",
 ]
 
