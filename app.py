@@ -1803,6 +1803,13 @@ def main():
             border-radius: 12px !important;
             border: 2px solid #b3d9e8 !important;
             background-color: white !important;
+            background: white !important;
+        }
+
+        /* Selectbox focus state */
+        .stSelectbox > div > div:focus-within {
+            border-color: #4a90a4 !important;
+            box-shadow: 0 0 0 3px rgba(74, 144, 164, 0.2) !important;
         }
 
         .stSelectbox label {
@@ -1814,9 +1821,25 @@ def main():
             color: #2c5f7d !important;
         }
 
-        /* Selectbox text */
-        .stSelectbox [data-baseweb="select"] span {
-            color: #2c3e50 !important;
+        /* Selectbox selected value text - high contrast */
+        .stSelectbox [data-baseweb="select"] span,
+        .stSelectbox [data-baseweb="select"] > div,
+        .stSelectbox [data-baseweb="select"] div[aria-selected="true"] {
+            color: #1a1a1a !important;
+            font-weight: 500 !important;
+        }
+
+        /* Selectbox input/control area */
+        .stSelectbox [data-baseweb="select"] > div {
+            background-color: white !important;
+            background: white !important;
+        }
+
+        /* Selectbox placeholder text */
+        .stSelectbox [data-baseweb="select"] [data-baseweb="icon"],
+        .stSelectbox [data-baseweb="select"] svg {
+            color: #4a90a4 !important;
+            fill: #4a90a4 !important;
         }
 
         /* Selectbox dropdown menu options - comprehensive fix */
