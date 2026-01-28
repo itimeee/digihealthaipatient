@@ -50,13 +50,16 @@ TRANSCRIPT_HEADERS = [
     "speaker",
     "message",
     "turn_index",
+    "selected_mode",
 ]
 
 
 def get_or_create_worksheet(spreadsheet, worksheet_name: str, headers: list):
     """
     Get existing worksheet or create new one with headers.
+    Implements safe header migration - updates header row if missing columns.
     ดึง worksheet ที่มีอยู่หรือสร้างใหม่พร้อมหัวคอลัมน์
+    รองรับการเพิ่ม column ใหม่อย่างปลอดภัย
 
     Args:
         spreadsheet: gspread Spreadsheet object
@@ -64,7 +67,7 @@ def get_or_create_worksheet(spreadsheet, worksheet_name: str, headers: list):
         headers: List of column header names
 
     Returns:
-        gspread Worksheet object
+        Tuple of (gspread Worksheet object, list of final headers)
     """
     try:
         # Try to get existing worksheet / ลองดึง worksheet ที่มีอยู่
@@ -77,11 +80,25 @@ def get_or_create_worksheet(spreadsheet, worksheet_name: str, headers: list):
                 # Empty worksheet, add headers / worksheet ว่าง เพิ่มหัวคอลัมน์
                 worksheet.update('A1', [headers])
                 print(f"[INFO] Added headers to existing worksheet: {worksheet_name}")
+                return worksheet, headers
+            else:
+                # Check if any new headers need to be added / ตรวจสอบว่าต้องเพิ่ม header ใหม่หรือไม่
+                existing_headers = first_row
+                missing_headers = [h for h in headers if h not in existing_headers]
+
+                if missing_headers:
+                    # Append missing headers to the end / เพิ่ม header ที่ขาดไปต่อท้าย
+                    new_headers = existing_headers + missing_headers
+                    worksheet.update('A1', [new_headers])
+                    print(f"[INFO] Updated headers in {worksheet_name}, added: {missing_headers}")
+                    return worksheet, new_headers
+
+                return worksheet, existing_headers
+
         except Exception:
             # Worksheet exists but empty, add headers / worksheet มีอยู่แต่ว่าง เพิ่มหัวคอลัมน์
             worksheet.update('A1', [headers])
-
-        return worksheet
+            return worksheet, headers
 
     except gspread.WorksheetNotFound:
         # Create new worksheet / สร้าง worksheet ใหม่
@@ -93,7 +110,7 @@ def get_or_create_worksheet(spreadsheet, worksheet_name: str, headers: list):
         )
         # Add headers / เพิ่มหัวคอลัมน์
         worksheet.update('A1', [headers])
-        return worksheet
+        return worksheet, headers
 
 
 def truncate_text(text: str, max_length: int = 40000) -> str:
@@ -161,7 +178,9 @@ def append_session_to_feedback_sheet(
 ) -> bool:
     """
     Append session data and transcript to feedback Google Sheet.
+    Implements safe header migration and row padding.
     เพิ่มข้อมูล session และ transcript ลง feedback Google Sheet
+    รองรับการเพิ่ม column และการ pad row
 
     Args:
         credentials: Google credentials object (from get_google_credentials())
@@ -177,15 +196,15 @@ def append_session_to_feedback_sheet(
         spreadsheet = gc.open_by_key(FEEDBACK_SHEET_ID)
 
         # === SESSIONS WORKSHEET ===
-        sessions_ws = get_or_create_worksheet(
+        sessions_ws, final_session_headers = get_or_create_worksheet(
             spreadsheet,
             FEEDBACK_SHEET_WORKSHEET_NAME,
             SESSION_HEADERS
         )
 
-        # Prepare session row data / เตรียมข้อมูลแถว session
+        # Prepare session row data using final headers / เตรียมข้อมูลแถว session ตาม headers สุดท้าย
         row_data = []
-        for header in SESSION_HEADERS:
+        for header in final_session_headers:
             value = session_row.get(header, "")
 
             # Handle special cases / จัดการกรณีพิเศษ
@@ -210,17 +229,17 @@ def append_session_to_feedback_sheet(
 
         # === TRANSCRIPT WORKSHEET ===
         if transcript_rows:
-            transcript_ws = get_or_create_worksheet(
+            transcript_ws, final_transcript_headers = get_or_create_worksheet(
                 spreadsheet,
                 TRANSCRIPT_WORKSHEET_NAME,
                 TRANSCRIPT_HEADERS
             )
 
-            # Prepare transcript rows data / เตรียมข้อมูลแถว transcript
+            # Prepare transcript rows data using final headers / เตรียมข้อมูลแถว transcript ตาม headers สุดท้าย
             rows_to_add = []
             for tr in transcript_rows:
                 row = []
-                for header in TRANSCRIPT_HEADERS:
+                for header in final_transcript_headers:
                     value = tr.get(header, "")
                     # Truncate message content / ตัดเนื้อหาข้อความ
                     if header == "message":

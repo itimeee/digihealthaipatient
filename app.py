@@ -49,6 +49,20 @@ from feedback_logger import (
     prepare_session_row,
 )
 
+# Import voice modules / นำเข้าโมดูลเสียง
+from voice_config import (
+    VOICE_MINIMAL_UI,
+    STATUS_TRANSCRIBING,
+    STATUS_GENERATING_TTS,
+    TTS_AUTO_PLAY,
+    VOICE_SAMPLE_RATE,
+)
+from voice_service import (
+    transcribe_audio,
+    synthesize_speech,
+    is_voice_service_available,
+)
+
 # ============================================================================
 # CONFIGURATION / การตั้งค่า
 # ============================================================================
@@ -95,7 +109,7 @@ def get_google_credentials():
         return None
 
 
-def save_session_to_sheet(user_name, user_email, chat_history, case_name=None):
+def save_session_to_sheet(user_name, user_email, chat_history, case_name=None, mode=None):
     """
     Append session data to existing Google Sheet
     เพิ่มข้อมูลเซสชันลงใน Google Sheet ที่มีอยู่
@@ -105,6 +119,7 @@ def save_session_to_sheet(user_name, user_email, chat_history, case_name=None):
         user_email: Email of the user / อีเมลผู้ใช้
         chat_history: List of chat messages / ประวัติการสนทนา
         case_name: Name of the case (e.g., "Case A") / ชื่อเคส
+        mode: Interview mode (text/voice) / โหมดการสัมภาษณ์
     """
     try:
         # Get credentials / รับข้อมูลรับรอง
@@ -123,18 +138,38 @@ def save_session_to_sheet(user_name, user_email, chat_history, case_name=None):
         session_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Check if sheet has headers, if not add them / ตรวจสอบว่ามี header หรือยัง
+        # Get mode from session state if not provided / ดึง mode จาก session state ถ้าไม่ได้ระบุ
+        if mode is None:
+            mode = st.session_state.get('selected_mode', 'text')
+
+        # Define expected headers including Mode / กำหนด headers ที่คาดหวังรวม Mode
+        expected_headers = ["Session ID", "Timestamp", "User Name", "User Email", "Case Name", "Mode", "Speaker", "Message"]
+
+        # Check and update headers if needed / ตรวจสอบและอัพเดท headers ถ้าจำเป็น
         existing_data = worksheet.get_all_values()
         if not existing_data or existing_data[0][0] != "Session ID":
             # Add headers if sheet is empty / เพิ่ม header ถ้าชีทว่าง
-            headers = ["Session ID", "Timestamp", "User Name", "User Email", "Case Name", "Speaker", "Message"]
-            worksheet.insert_row(headers, 1)
+            worksheet.insert_row(expected_headers, 1)
+        elif "Mode" not in existing_data[0]:
+            # Update header row to include Mode / อัพเดท header row ให้มี Mode
+            # Insert Mode column after Case Name (position 5, 0-indexed)
+            current_headers = existing_data[0]
+            if len(current_headers) >= 5:
+                # Find position after "Case Name"
+                try:
+                    case_idx = current_headers.index("Case Name")
+                    new_headers = current_headers[:case_idx+1] + ["Mode"] + current_headers[case_idx+1:]
+                    worksheet.update('A1', [new_headers])
+                except ValueError:
+                    # Case Name not found, append Mode at end
+                    new_headers = current_headers + ["Mode"]
+                    worksheet.update('A1', [new_headers])
 
         # Prepare rows to append / เตรียมแถวที่จะเพิ่ม
         rows_to_add = []
 
         # Add session separator row / เพิ่มแถวแบ่งเซสชัน
-        separator = [f"=== SESSION START: {session_id} ===", session_time, user_name, user_email, case_name or "", "", ""]
+        separator = [f"=== SESSION START: {session_id} ===", session_time, user_name, user_email, case_name or "", mode, "", ""]
         rows_to_add.append(separator)
 
         # Add all chat messages / เพิ่มข้อความสนทนาทั้งหมด
@@ -145,17 +180,18 @@ def save_session_to_sheet(user_name, user_email, chat_history, case_name=None):
                 user_name,
                 user_email,
                 case_name or "",
+                mode,
                 message["role"],
                 message["content"]
             ]
             rows_to_add.append(row)
 
         # Add session end separator / เพิ่มแถวปิดเซสชัน
-        end_separator = [f"=== SESSION END: {session_id} ===", session_time, user_name, user_email, case_name or "", "", f"Total messages: {len(chat_history)}"]
+        end_separator = [f"=== SESSION END: {session_id} ===", session_time, user_name, user_email, case_name or "", mode, "", f"Total messages: {len(chat_history)}"]
         rows_to_add.append(end_separator)
 
         # Add empty row for spacing / เพิ่มแถวว่างเพื่อเว้นระยะ
-        rows_to_add.append(["", "", "", "", "", "", ""])
+        rows_to_add.append(["", "", "", "", "", "", "", ""])
 
         # Append all rows at once (more efficient) / เพิ่มทุกแถวพร้อมกัน (เร็วกว่า)
         worksheet.append_rows(rows_to_add)
@@ -167,7 +203,7 @@ def save_session_to_sheet(user_name, user_email, chat_history, case_name=None):
         return False
 
 
-def save_latest_session(user_name, user_email, chat_history, case_name=None):
+def save_latest_session(user_name, user_email, chat_history, case_name=None, mode=None):
     """
     Replace data in latest session sheet (for displaying most recent interview)
     แทนที่ข้อมูลในชีทเซสชันล่าสุด (สำหรับแสดงการสัมภาษณ์ล่าสุด)
@@ -177,6 +213,7 @@ def save_latest_session(user_name, user_email, chat_history, case_name=None):
         user_email: Email of the user / อีเมลผู้ใช้
         chat_history: List of chat messages / ประวัติการสนทนา
         case_name: Name of the case (e.g., "Case A") / ชื่อเคส
+        mode: Interview mode (text/voice) / โหมดการสัมภาษณ์
     """
     try:
         # Get credentials / รับข้อมูลรับรอง
@@ -198,11 +235,15 @@ def save_latest_session(user_name, user_email, chat_history, case_name=None):
         session_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
 
+        # Get mode from session state if not provided / ดึง mode จาก session state ถ้าไม่ได้ระบุ
+        if mode is None:
+            mode = st.session_state.get('selected_mode', 'text')
+
         # Prepare all rows including headers / เตรียมแถวทั้งหมดรวมหัวตาราง
         all_rows = []
 
-        # Add headers / เพิ่มหัวตาราง
-        headers = ["Session ID", "Timestamp", "User Name", "User Email", "Case Name", "Speaker", "Message"]
+        # Add headers including Mode / เพิ่มหัวตารางรวม Mode
+        headers = ["Session ID", "Timestamp", "User Name", "User Email", "Case Name", "Mode", "Speaker", "Message"]
         all_rows.append(headers)
 
         # Add all chat messages / เพิ่มข้อความสนทนาทั้งหมด
@@ -213,6 +254,7 @@ def save_latest_session(user_name, user_email, chat_history, case_name=None):
                 user_name,
                 user_email,
                 case_name or "",
+                mode,
                 message["role"],
                 message["content"]
             ]
@@ -532,6 +574,31 @@ def initialize_session_state():
     if 'feedback_session_id' not in st.session_state:
         st.session_state.feedback_session_id = None
 
+    # Voice mode session state / สถานะ session สำหรับ voice mode
+    if 'voice_draft_text' not in st.session_state:
+        st.session_state.voice_draft_text = ''
+
+    if 'voice_input_key' not in st.session_state:
+        st.session_state.voice_input_key = 0
+
+    if 'pending_ai_audio' not in st.session_state:
+        st.session_state.pending_ai_audio = None
+
+    if 'last_tts_played_index' not in st.session_state:
+        st.session_state.last_tts_played_index = -1
+
+    if 'voice_transcribing' not in st.session_state:
+        st.session_state.voice_transcribing = False
+
+    if 'voice_generating_tts' not in st.session_state:
+        st.session_state.voice_generating_tts = False
+
+    if 'formulation_draft_text' not in st.session_state:
+        st.session_state.formulation_draft_text = ''
+
+    if 'formulation_mic_key' not in st.session_state:
+        st.session_state.formulation_mic_key = 0
+
 
 # ============================================================================
 # PAGE 1: HOMEPAGE / LOGIN
@@ -752,7 +819,14 @@ def page_pre_brief():
 
     # Show info about selected mode / แสดงข้อมูลเกี่ยวกับโหมดที่เลือก
     if st.session_state.selected_mode == 'voice':
-        st.info("🎤 **Voice Mode** will be available in a future update. This mode will allow you to speak naturally with the AI patient using voice recognition. Please select Text Mode to continue.")
+        # Check voice service availability / ตรวจสอบความพร้อมของบริการเสียง
+        stt_available, tts_available = is_voice_service_available()
+        if stt_available:
+            st.success("🎤 **Voice Mode selected.** คุณสามารถพูดกับผู้ป่วย AI ได้โดยตรง ระบบจะถอดเสียงและแปลงคำตอบเป็นเสียง Click 'Start Case' when you're ready to begin the interview.")
+            if not tts_available:
+                st.warning("⚠️ Text-to-Speech ไม่พร้อมใช้งาน คำตอบจะแสดงเป็นข้อความเท่านั้น")
+        else:
+            st.warning("⚠️ **Voice Mode** is not available. Speech-to-Text API is not configured. Please check your Google Cloud setup or use Text Mode.")
     else:
         st.success("✅ **Text Mode selected.** You will type your questions and the AI patient will respond in text. Click 'Start Case' when you're ready to begin the interview.")
 
@@ -768,11 +842,15 @@ def page_pre_brief():
     # Start Case button / ปุ่มเริ่มเคส
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
+        # Disable only if voice mode is selected AND STT is not available
+        # ปิดการใช้งานเฉพาะเมื่อเลือก voice mode และ STT ไม่พร้อมใช้งาน
+        stt_avail, _ = is_voice_service_available()
+        start_disabled = (st.session_state.selected_mode == 'voice' and not stt_avail)
         st.button(
             "▶️ Start Case",
             use_container_width=True,
             type="primary",
-            disabled=(st.session_state.selected_mode == 'voice'),
+            disabled=start_disabled,
             on_click=start_case_callback
         )
 
@@ -1046,63 +1124,204 @@ def page_chat():
             st.session_state.timer_active = False
             # Auto-save to both sheets / บันทึกอัตโนมัติไปทั้งสองชีท
             with st.spinner("Saving session data... / กำลังบันทึกข้อมูล..."):
+                current_mode = st.session_state.get('selected_mode', 'text')
                 # Save to main log sheet / บันทึกไปชีทบันทึกหลัก
                 save_session_to_sheet(
                     st.session_state.user_name,
                     st.session_state.user_email,
                     st.session_state.chat_history,
-                    st.session_state.get('current_case_name', None)
+                    st.session_state.get('current_case_name', None),
+                    mode=current_mode
                 )
                 # Save to latest session sheet / บันทึกไปชีทเซสชันล่าสุด
                 save_latest_session(
                     st.session_state.user_name,
                     st.session_state.user_email,
                     st.session_state.chat_history,
-                    st.session_state.get('current_case_name', None)
+                    st.session_state.get('current_case_name', None),
+                    mode=current_mode
                 )
             st.session_state.page = 'end'
             st.rerun()
 
     # ========================================================================
-    # CHAT INPUT - Using native st.chat_input / ใช้ st.chat_input แบบ native
+    # CHAT INPUT - Mode-aware input / ช่องป้อนข้อมูลตามโหมด
     # ========================================================================
+
+    # Get current mode / ดึงโหมดปัจจุบัน
+    current_mode = st.session_state.get('selected_mode', 'text')
 
     # Check if timer is still active / ตรวจสอบว่าตัวจับเวลายังทำงานอยู่หรือไม่
     if st.session_state.timer_active:
-        # Use st.chat_input for a pinned chat bar at the bottom
-        # ใช้ st.chat_input เพื่อสร้างแถบแชทที่ปักหมุดไว้ด้านล่าง
-        if prompt := st.chat_input(
-            placeholder="Type your question or response here..." if not st.session_state.ai_responding else "Please wait for patient's response...",
-            key="chat_input"
-        ):
-            # 1. Append user message to history immediately
-            # เพิ่มข้อความผู้ใช้ในประวัติทันที
-            st.session_state.chat_history.append({
-                "role": "user",
-                "content": prompt
-            })
 
-            # 2. Set AI responding flag / ตั้งสถานะว่า AI กำลังตอบ
-            st.session_state.ai_responding = True
+        if current_mode == 'voice':
+            # ================================================================
+            # VOICE MODE INPUT / ช่องป้อนข้อมูลโหมดเสียง
+            # ================================================================
+            st.markdown("---")
+            st.markdown("### 🎤 Voice Input / ป้อนข้อมูลด้วยเสียง")
 
-            # 3. Define callback function for thread / กำหนดฟังก์ชันสำหรับเธรด
-            def ai_response_callback():
-                """Background thread function to get AI response"""
-                response = get_ai_response_threaded(
-                    st.session_state.chat_history,
-                    st.session_state.case_context
+            # Show status indicators / แสดงสถานะ
+            if st.session_state.voice_transcribing:
+                st.info(f"🎙️ {STATUS_TRANSCRIBING}")
+            elif st.session_state.ai_responding:
+                st.info("🤔 กำลังรอคำตอบจาก AI...")
+            elif st.session_state.voice_generating_tts:
+                st.info(f"🔊 {STATUS_GENERATING_TTS}")
+
+            # Voice input section / ส่วนป้อนเสียง
+            voice_col1, voice_col2 = st.columns([1, 2])
+
+            with voice_col1:
+                # Microphone input with unique key
+                # ช่อง mic input พร้อม key ที่ไม่ซ้ำ
+                audio_data = st.audio_input(
+                    "🎤 Record your message",
+                    key=f"voice_input_{st.session_state.voice_input_key}",
+                    disabled=st.session_state.ai_responding
                 )
-                # Store response and set ready flag / เก็บคำตอบและตั้งสถานะพร้อม
-                st.session_state.pending_ai_response = response
-                st.session_state.ai_response_ready = True
 
-            # 4. Start background thread with Streamlit context / เริ่มเธรดพื้นหลังพร้อม Streamlit context
-            thread = threading.Thread(target=ai_response_callback, daemon=True)
-            add_script_run_ctx(thread)  # Attach Streamlit context to thread
-            thread.start()
+                # Process recorded audio / ประมวลผลเสียงที่บันทึก
+                if audio_data is not None and not st.session_state.ai_responding:
+                    # Read audio bytes / อ่าน bytes ของเสียง
+                    audio_bytes = audio_data.read()
 
-            # 5. Rerun to show loading state / รีรันเพื่อแสดงสถานะโหลด
-            st.rerun()
+                    if audio_bytes and len(audio_bytes) > 100:
+                        # Transcribe audio / ถอดเสียง
+                        with st.spinner(STATUS_TRANSCRIBING):
+                            st.session_state.voice_transcribing = True
+                            transcript, error = transcribe_audio(audio_bytes)
+                            st.session_state.voice_transcribing = False
+
+                        if transcript:
+                            st.session_state.voice_draft_text = transcript
+                            # Increment key to reset audio input
+                            st.session_state.voice_input_key += 1
+                            st.rerun()
+                        elif error:
+                            st.error(f"❌ {error}")
+
+            with voice_col2:
+                # Editable text area for transcribed text
+                # ช่อง text area สำหรับแก้ไขข้อความที่ถอดเสียง
+                edited_text = st.text_area(
+                    "📝 ข้อความ (แก้ไขได้):",
+                    value=st.session_state.voice_draft_text,
+                    height=100,
+                    placeholder="บันทึกเสียงหรือพิมพ์ข้อความที่นี่...",
+                    disabled=st.session_state.ai_responding,
+                    key="voice_text_area"
+                )
+
+                # Send button / ปุ่มส่ง
+                send_col1, send_col2 = st.columns([1, 1])
+                with send_col1:
+                    if st.button(
+                        "📤 Send / ส่ง",
+                        use_container_width=True,
+                        type="primary",
+                        disabled=st.session_state.ai_responding or not edited_text.strip(),
+                        key="voice_send_btn"
+                    ):
+                        if edited_text.strip():
+                            # 1. Append user message to history
+                            st.session_state.chat_history.append({
+                                "role": "user",
+                                "content": edited_text.strip()
+                            })
+
+                            # 2. Clear draft and set AI responding flag
+                            st.session_state.voice_draft_text = ''
+                            st.session_state.ai_responding = True
+
+                            # 3. Define callback function for thread with TTS
+                            def ai_response_callback_voice():
+                                """Background thread function to get AI response with TTS"""
+                                response = get_ai_response_threaded(
+                                    st.session_state.chat_history,
+                                    st.session_state.case_context
+                                )
+                                st.session_state.pending_ai_response = response
+
+                                # Generate TTS for voice mode / สร้าง TTS สำหรับ voice mode
+                                if response and TTS_AUTO_PLAY:
+                                    st.session_state.voice_generating_tts = True
+                                    audio_bytes, tts_error = synthesize_speech(response)
+                                    st.session_state.voice_generating_tts = False
+                                    if audio_bytes:
+                                        st.session_state.pending_ai_audio = audio_bytes
+                                    else:
+                                        print(f"[WARNING] TTS failed: {tts_error}")
+
+                                st.session_state.ai_response_ready = True
+
+                            # 4. Start background thread
+                            thread = threading.Thread(target=ai_response_callback_voice, daemon=True)
+                            add_script_run_ctx(thread)
+                            thread.start()
+
+                            # 5. Rerun to show loading state
+                            st.rerun()
+
+                with send_col2:
+                    if st.button(
+                        "🗑️ Clear / ล้าง",
+                        use_container_width=True,
+                        disabled=st.session_state.ai_responding,
+                        key="voice_clear_btn"
+                    ):
+                        st.session_state.voice_draft_text = ''
+                        st.session_state.voice_input_key += 1
+                        st.rerun()
+
+            # Show TTS audio for the latest patient response / แสดง audio TTS สำหรับคำตอบล่าสุด
+            if st.session_state.pending_ai_audio:
+                current_msg_count = len(st.session_state.chat_history)
+                if current_msg_count > st.session_state.last_tts_played_index:
+                    st.markdown("##### 🔊 Patient Response Audio")
+                    st.audio(st.session_state.pending_ai_audio, format="audio/mp3")
+                    st.session_state.last_tts_played_index = current_msg_count
+                    # Clear pending audio after playing
+                    st.session_state.pending_ai_audio = None
+
+        else:
+            # ================================================================
+            # TEXT MODE INPUT / ช่องป้อนข้อมูลโหมดข้อความ
+            # ================================================================
+            # Use st.chat_input for a pinned chat bar at the bottom
+            # ใช้ st.chat_input เพื่อสร้างแถบแชทที่ปักหมุดไว้ด้านล่าง
+            if prompt := st.chat_input(
+                placeholder="Type your question or response here..." if not st.session_state.ai_responding else "Please wait for patient's response...",
+                key="chat_input"
+            ):
+                # 1. Append user message to history immediately
+                # เพิ่มข้อความผู้ใช้ในประวัติทันที
+                st.session_state.chat_history.append({
+                    "role": "user",
+                    "content": prompt
+                })
+
+                # 2. Set AI responding flag / ตั้งสถานะว่า AI กำลังตอบ
+                st.session_state.ai_responding = True
+
+                # 3. Define callback function for thread / กำหนดฟังก์ชันสำหรับเธรด
+                def ai_response_callback():
+                    """Background thread function to get AI response"""
+                    response = get_ai_response_threaded(
+                        st.session_state.chat_history,
+                        st.session_state.case_context
+                    )
+                    # Store response and set ready flag / เก็บคำตอบและตั้งสถานะพร้อม
+                    st.session_state.pending_ai_response = response
+                    st.session_state.ai_response_ready = True
+
+                # 4. Start background thread with Streamlit context / เริ่มเธรดพื้นหลังพร้อม Streamlit context
+                thread = threading.Thread(target=ai_response_callback, daemon=True)
+                add_script_run_ctx(thread)  # Attach Streamlit context to thread
+                thread.start()
+
+                # 5. Rerun to show loading state / รีรันเพื่อแสดงสถานะโหลด
+                st.rerun()
     else:
         # Timer ended, disable input / หมดเวลาแล้ว ปิดการพิมพ์
         st.warning("⏰ Time's up! Please end the case.")
@@ -1376,6 +1595,56 @@ def page_end():
         Please answer the questions below to receive AI feedback:
         """)
 
+        # ================================================================
+        # VOICE DICTATION FOR FORMULATION / การป้อนข้อมูลด้วยเสียงสำหรับ formulation
+        # ================================================================
+        # This section is OUTSIDE the form to allow audio_input to work
+        # ส่วนนี้อยู่นอก form เพื่อให้ audio_input ทำงานได้
+
+        with st.expander("🎤 Dictate Formulation (Voice) / พูด Formulation", expanded=False):
+            st.markdown("Use the microphone to dictate your psychodynamic formulation. "
+                       "The transcribed text will be used in the form below.")
+            st.markdown("ใช้ไมโครโฟนเพื่อพูด psychodynamic formulation ข้อความที่ถอดเสียงจะถูกใช้ในฟอร์มด้านล่าง")
+
+            formulation_mic_col1, formulation_mic_col2 = st.columns([1, 2])
+
+            with formulation_mic_col1:
+                formulation_audio = st.audio_input(
+                    "🎤 Record formulation",
+                    key=f"formulation_mic_{st.session_state.formulation_mic_key}"
+                )
+
+                if formulation_audio is not None:
+                    audio_bytes = formulation_audio.read()
+                    if audio_bytes and len(audio_bytes) > 100:
+                        with st.spinner(STATUS_TRANSCRIBING):
+                            transcript, error = transcribe_audio(audio_bytes)
+
+                        if transcript:
+                            # Append to existing formulation text or replace
+                            if st.session_state.formulation_text:
+                                st.session_state.formulation_text += "\n" + transcript
+                            else:
+                                st.session_state.formulation_text = transcript
+                            st.session_state.formulation_mic_key += 1
+                            st.success(f"✅ Transcribed: {transcript[:100]}...")
+                            st.rerun()
+                        elif error:
+                            st.error(f"❌ {error}")
+
+            with formulation_mic_col2:
+                st.markdown("**Current formulation text:**")
+                st.text_area(
+                    "Preview (read-only)",
+                    value=st.session_state.formulation_text,
+                    height=100,
+                    disabled=True,
+                    key="formulation_preview"
+                )
+                if st.button("🗑️ Clear formulation text", key="clear_formulation"):
+                    st.session_state.formulation_text = ''
+                    st.rerun()
+
         with st.form("post_case_form"):
             # 1. Provisional Diagnosis
             st.markdown("#### 1️⃣ Provisional Diagnosis")
@@ -1546,6 +1815,7 @@ def page_end():
                                 session_id=session_id,
                                 chat_history=st.session_state.chat_history,
                                 timestamp=timestamp,
+                                selected_mode=st.session_state.get("selected_mode", "text"),
                             )
 
                             # Append to sheet / เพิ่มลง sheet

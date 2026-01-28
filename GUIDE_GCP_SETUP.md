@@ -21,7 +21,7 @@ This guide will help you set up Google Cloud Platform (GCP) for the DigiHealth A
 
 ### Step 2: Enable Required APIs
 
-You need to enable two APIs: Google Drive API and Google Sheets API.
+You need to enable several APIs: Google Drive API, Google Sheets API, and for Voice Mode: Speech-to-Text API and Text-to-Speech API.
 
 #### Enable Google Sheets API:
 1. In the Google Cloud Console, click the hamburger menu (☰) at top-left
@@ -37,6 +37,20 @@ You need to enable two APIs: Google Drive API and Google Sheets API.
 3. Click on "Google Drive API"
 4. Click the blue **ENABLE** button
 5. Wait for it to be enabled
+
+#### Enable Speech-to-Text API (for Voice Mode):
+1. Still in the API Library, search for: "Cloud Speech-to-Text API"
+2. Click on "Cloud Speech-to-Text API"
+3. Click the blue **ENABLE** button
+4. Wait for it to be enabled
+
+#### Enable Text-to-Speech API (for Voice Mode):
+1. Still in the API Library, search for: "Cloud Text-to-Speech API"
+2. Click on "Cloud Text-to-Speech API"
+3. Click the blue **ENABLE** button
+4. Wait for it to be enabled
+
+**Note**: Voice Mode requires both Speech-to-Text and Text-to-Speech APIs to be enabled. The service account with Editor role will have sufficient permissions for these APIs.
 
 ### Step 3: Create a Service Account
 
@@ -320,6 +334,8 @@ If you encounter issues:
 - [ ] Created Google Cloud Project
 - [ ] Enabled Google Sheets API
 - [ ] Enabled Google Drive API
+- [ ] Enabled Cloud Speech-to-Text API (for Voice Mode)
+- [ ] Enabled Cloud Text-to-Speech API (for Voice Mode)
 - [ ] Created Service Account with Editor role
 - [ ] Downloaded JSON credentials file
 - [ ] Got Gemini API Key from Google AI Studio
@@ -330,6 +346,7 @@ If you encounter issues:
 - [ ] Added secrets to Streamlit Cloud
 - [ ] Tested the deployed app
 - [ ] Verified Google Sheet creation works
+- [ ] Tested Voice Mode (if using)
 
 ---
 

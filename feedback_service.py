@@ -370,7 +370,7 @@ def format_transcript_for_display(chat_history: list) -> str:
     return "\n\n".join(lines)
 
 
-def prepare_transcript_rows(session_id: str, chat_history: list, timestamp: str) -> list:
+def prepare_transcript_rows(session_id: str, chat_history: list, timestamp: str, selected_mode: str = "text") -> list:
     """
     Prepare transcript data as rows for Google Sheet.
     เตรียมข้อมูล transcript เป็นแถวสำหรับ Google Sheet
@@ -379,6 +379,7 @@ def prepare_transcript_rows(session_id: str, chat_history: list, timestamp: str)
         session_id: Unique session identifier
         chat_history: List of message dictionaries
         timestamp: Session timestamp string
+        selected_mode: Interview mode (text/voice) / โหมดการสัมภาษณ์
 
     Returns:
         List of row dictionaries
@@ -395,7 +396,8 @@ def prepare_transcript_rows(session_id: str, chat_history: list, timestamp: str)
             "timestamp": timestamp,
             "speaker": speaker,
             "message": content,
-            "turn_index": idx + 1
+            "turn_index": idx + 1,
+            "selected_mode": selected_mode,
         })
 
     return rows
