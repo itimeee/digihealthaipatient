@@ -1761,6 +1761,154 @@ def main():
             background-color: white !important;
         }
 
+        /* ============================================ */
+        /* TEXT AREA STYLING / สไตล์ Text Area */
+        /* ============================================ */
+
+        /* Text area container and textarea */
+        .stTextArea textarea {
+            border-radius: 12px !important;
+            border: 2px solid #b3d9e8 !important;
+            background-color: white !important;
+            padding: 12px !important;
+            transition: border-color 0.3s ease !important;
+            color: #2c3e50 !important;
+            caret-color: #2c3e50 !important;
+            font-size: 1rem !important;
+        }
+
+        .stTextArea textarea:focus {
+            border-color: #4a90a4 !important;
+            box-shadow: 0 0 0 3px rgba(74, 144, 164, 0.1) !important;
+        }
+
+        /* Text area labels */
+        .stTextArea label {
+            color: #2c5f7d !important;
+            font-weight: 500 !important;
+        }
+
+        .stTextArea label p {
+            color: #2c5f7d !important;
+        }
+
+        /* ============================================ */
+        /* SELECTBOX STYLING / สไตล์ SelectBox */
+        /* ============================================ */
+
+        /* Selectbox container */
+        .stSelectbox > div > div {
+            border-radius: 12px !important;
+            border: 2px solid #b3d9e8 !important;
+            background-color: white !important;
+        }
+
+        .stSelectbox label {
+            color: #2c5f7d !important;
+            font-weight: 500 !important;
+        }
+
+        .stSelectbox label p {
+            color: #2c5f7d !important;
+        }
+
+        /* Selectbox text */
+        .stSelectbox [data-baseweb="select"] span {
+            color: #2c3e50 !important;
+        }
+
+        /* ============================================ */
+        /* EXPANDER STYLING / สไตล์ Expander */
+        /* ============================================ */
+
+        /* Expander header */
+        .streamlit-expanderHeader {
+            background-color: #f0f8fb !important;
+            border-radius: 12px !important;
+            color: #2c5f7d !important;
+            font-weight: 500 !important;
+        }
+
+        .streamlit-expanderHeader p {
+            color: #2c5f7d !important;
+        }
+
+        /* Expander content */
+        .streamlit-expanderContent {
+            background-color: white !important;
+            border: 1px solid #b3d9e8 !important;
+            border-top: none !important;
+            border-radius: 0 0 12px 12px !important;
+            padding: 1rem !important;
+        }
+
+        .streamlit-expanderContent p,
+        .streamlit-expanderContent span,
+        .streamlit-expanderContent div {
+            color: #2c3e50 !important;
+        }
+
+        /* ============================================ */
+        /* FORM LABELS & TEXT / ป้ายและข้อความในฟอร์ม */
+        /* ============================================ */
+
+        /* All form labels */
+        label, .stMarkdown label {
+            color: #2c5f7d !important;
+        }
+
+        /* Markdown headers in forms */
+        .stMarkdown h4 {
+            color: #2c5f7d !important;
+            font-weight: 600 !important;
+        }
+
+        /* General paragraph text */
+        .stMarkdown p {
+            color: #37474f !important;
+        }
+
+        /* Bold text */
+        .stMarkdown strong, .stMarkdown b {
+            color: #2c5f7d !important;
+        }
+
+        /* List items */
+        .stMarkdown li {
+            color: #37474f !important;
+        }
+
+        /* Horizontal rules in forms */
+        .stMarkdown hr {
+            border-color: #b3d9e8 !important;
+            opacity: 0.5 !important;
+        }
+
+        /* Caption text */
+        .stCaption, .stCaption p {
+            color: #5a7a8a !important;
+        }
+
+        /* ============================================ */
+        /* FEEDBACK RESULTS STYLING / สไตล์ผลลัพธ์ Feedback */
+        /* ============================================ */
+
+        /* Ensure all text in main content area is visible */
+        [data-testid="stMarkdownContainer"] p,
+        [data-testid="stMarkdownContainer"] li,
+        [data-testid="stMarkdownContainer"] span {
+            color: #37474f !important;
+        }
+
+        [data-testid="stMarkdownContainer"] strong,
+        [data-testid="stMarkdownContainer"] b {
+            color: #2c5f7d !important;
+        }
+
+        [data-testid="stMarkdownContainer"] h4 {
+            color: #2c5f7d !important;
+        }
+
         /* Spinner */
         .stSpinner > div {
             border-top-color: #4a90a4 !important;
