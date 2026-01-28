@@ -1362,7 +1362,6 @@ def page_end():
         # Re-evaluate button / ปุ่มประเมินใหม่
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.warning("⚠️ การประเมินใหม่จะบันทึกข้อมูลเพิ่มอีก 1 แถว")
             if st.button("🔄 Re-evaluate / ประเมินใหม่", use_container_width=True):
                 st.session_state.feedback_generated = False
                 st.session_state.feedback_result = None
@@ -1818,6 +1817,30 @@ def main():
         /* Selectbox text */
         .stSelectbox [data-baseweb="select"] span {
             color: #2c3e50 !important;
+        }
+
+        /* Selectbox dropdown menu options */
+        [data-baseweb="menu"] {
+            background-color: white !important;
+        }
+
+        [data-baseweb="menu"] li {
+            color: #2c3e50 !important;
+            background-color: white !important;
+        }
+
+        [data-baseweb="menu"] li:hover {
+            background-color: #e3f2fd !important;
+            color: #2c5f7d !important;
+        }
+
+        /* Selectbox option text */
+        [role="option"] {
+            color: #2c3e50 !important;
+        }
+
+        [role="listbox"] {
+            background-color: white !important;
         }
 
         /* ============================================ */
