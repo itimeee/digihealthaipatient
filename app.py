@@ -1418,7 +1418,7 @@ def page_end():
             st.markdown("#### 3️⃣ Psychodynamic Formulation")
 
             formulation_framework = st.selectbox(
-                "เลือก Framework / Select Framework:",
+                "เลือกทฤษฎี / Select Theory:",
                 options=PSYCHODYNAMIC_FRAMEWORKS,
                 index=PSYCHODYNAMIC_FRAMEWORKS.index(st.session_state.formulation_framework)
                       if st.session_state.formulation_framework in PSYCHODYNAMIC_FRAMEWORKS else 0
@@ -1819,27 +1819,41 @@ def main():
             color: #2c3e50 !important;
         }
 
-        /* Selectbox dropdown menu options */
-        [data-baseweb="menu"] {
+        /* Selectbox dropdown menu options - comprehensive fix */
+        [data-baseweb="menu"],
+        [data-baseweb="popover"] > div,
+        [data-baseweb="popover"] [data-baseweb="menu"],
+        div[data-baseweb="popover"] {
             background-color: white !important;
+            background: white !important;
         }
 
-        [data-baseweb="menu"] li {
+        [data-baseweb="menu"] li,
+        [data-baseweb="menu"] ul li,
+        [role="listbox"] li,
+        [role="option"] {
             color: #2c3e50 !important;
             background-color: white !important;
+            background: white !important;
         }
 
-        [data-baseweb="menu"] li:hover {
+        [data-baseweb="menu"] li:hover,
+        [role="option"]:hover,
+        [role="option"][aria-selected="true"] {
             background-color: #e3f2fd !important;
+            background: #e3f2fd !important;
             color: #2c5f7d !important;
         }
 
-        /* Selectbox option text */
-        [role="option"] {
-            color: #2c3e50 !important;
+        /* Selectbox listbox container */
+        [role="listbox"],
+        ul[role="listbox"] {
+            background-color: white !important;
+            background: white !important;
         }
 
-        [role="listbox"] {
+        /* Override any dark theme popover */
+        .stSelectbox div[data-baseweb="popover"] > div {
             background-color: white !important;
         }
 
