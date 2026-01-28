@@ -33,6 +33,7 @@ from feedback_config import (
     FEEDBACK_FALLBACK_MODEL,
     FEEDBACK_MAX_TOKENS,
     HF_ENDPOINT_TYPE,
+    HF_ROUTER_BASE_URL,
     HF_DEDICATED_ENDPOINT_URL,
     HF_API_TIMEOUT,
     HF_MAX_RETRIES,
@@ -261,8 +262,8 @@ def generate_feedback_huggingface(payload: dict, model_id: str = None) -> dict:
     Generate feedback using Hugging Face Inference API.
     สร้าง feedback โดยใช้ Hugging Face Inference API
 
-    Supports both Serverless Inference API and Dedicated Inference Endpoints.
-    รองรับทั้ง Serverless Inference API และ Dedicated Inference Endpoints
+    Supports both Serverless Inference API (via HF Router) and Dedicated Inference Endpoints.
+    รองรับทั้ง Serverless Inference API (ผ่าน HF Router) และ Dedicated Inference Endpoints
 
     Args:
         payload: Session data dictionary
@@ -284,9 +285,12 @@ def generate_feedback_huggingface(payload: dict, model_id: str = None) -> dict:
         # Determine API URL / กำหนด API URL
         if HF_ENDPOINT_TYPE == "dedicated" and HF_DEDICATED_ENDPOINT_URL:
             api_url = HF_DEDICATED_ENDPOINT_URL
+            print(f"[INFO] Using dedicated endpoint: {api_url}")
         else:
-            # Serverless Inference API
-            api_url = f"https://api-inference.huggingface.co/models/{use_model}"
+            # Serverless Inference API via HF Router (new recommended endpoint)
+            # ใช้ HF Router แทน api-inference.huggingface.co ที่เลิกใช้แล้ว
+            api_url = f"{HF_ROUTER_BASE_URL}/{use_model}"
+            print(f"[INFO] Using HF Router: {api_url}")
 
         # Build prompt / สร้าง prompt
         user_prompt = build_feedback_prompt(payload)
@@ -325,10 +329,34 @@ def generate_feedback_huggingface(payload: dict, model_id: str = None) -> dict:
                     timeout=HF_API_TIMEOUT
                 )
 
-                # Handle 503 - Model loading / จัดการ 503 - โมเดลกำลังโหลด
+                # Handle specific error codes with helpful messages
+                # จัดการ error codes เฉพาะพร้อมข้อความที่เป็นประโยชน์
+
+                # 401/403 - Authentication/Authorization error
+                if response.status_code in (401, 403):
+                    error_msg = f"HTTP {response.status_code}: Authentication failed"
+                    print(f"[ERROR] {error_msg}")
+                    print("[ERROR] Your HF_API_TOKEN likely lacks 'Inference Providers' permission.")
+                    print("[ERROR] Go to https://huggingface.co/settings/tokens and ensure your token has the required permissions.")
+                    last_error = error_msg
+                    return None  # Don't retry auth errors
+
+                # 404 - Model not found
+                if response.status_code == 404:
+                    error_msg = f"HTTP 404: Model '{use_model}' not found"
+                    print(f"[ERROR] {error_msg}")
+                    print(f"[ERROR] The model '{use_model}' may not be available on hf-inference.")
+                    print("[ERROR] Consider switching to a different model or using a dedicated endpoint.")
+                    last_error = error_msg
+                    return None  # Don't retry 404 errors
+
+                # 503 - Model loading / จัดการ 503 - โมเดลกำลังโหลด
                 if response.status_code == 503:
-                    error_data = response.json()
-                    estimated_time = error_data.get("estimated_time", HF_RETRY_DELAY)
+                    try:
+                        error_data = response.json()
+                        estimated_time = error_data.get("estimated_time", HF_RETRY_DELAY)
+                    except Exception:
+                        estimated_time = HF_RETRY_DELAY
                     print(f"[INFO] Model loading, waiting {estimated_time}s...")
                     time.sleep(min(estimated_time, HF_RETRY_DELAY * 2))
                     continue
@@ -369,7 +397,7 @@ def generate_feedback_huggingface(payload: dict, model_id: str = None) -> dict:
 
         # Check if we got a response / ตรวจสอบว่าได้ response หรือไม่
         if not response_text:
-            print(f"[ERROR] No response after {HF_MAX_RETRIES} attempts")
+            print(f"[ERROR] No response after {HF_MAX_RETRIES} attempts. Last error: {last_error}")
             return None  # Return None to trigger fallback
 
         # Parse JSON response / แปลง JSON จากคำตอบ

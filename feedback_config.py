@@ -44,9 +44,13 @@ FEEDBACK_MAX_TOKENS = 4096
 
 # Hugging Face Inference API endpoint type
 # ประเภท endpoint ของ Hugging Face Inference API
-# - "serverless": ใช้ Serverless Inference API (ฟรี แต่มี rate limit)
+# - "serverless": ใช้ Serverless Inference API ผ่าน HF Router (แนะนำ)
 # - "dedicated": ใช้ Dedicated Inference Endpoints (ต้องสร้าง endpoint เอง)
 HF_ENDPOINT_TYPE = "serverless"
+
+# HF Router base URL for serverless inference (replaces deprecated api-inference.huggingface.co)
+# URL ฐานของ HF Router สำหรับ serverless inference (แทนที่ api-inference.huggingface.co ที่เลิกใช้)
+HF_ROUTER_BASE_URL = "https://router.huggingface.co/hf-inference/models"
 
 # For dedicated endpoints, specify the full URL
 # สำหรับ dedicated endpoints ระบุ URL เต็ม
