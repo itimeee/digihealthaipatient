@@ -9,62 +9,35 @@ Edit these values to customize the feedback behavior without modifying app.py.
 """
 
 # =============================================================================
-# MODEL PROVIDER SETTINGS / การตั้งค่าผู้ให้บริการโมเดล
+# GEMINI MODEL SETTINGS / การตั้งค่าโมเดล Gemini
 # =============================================================================
 
-# Provider options: "gemini", "medgemma", "huggingface"
-# ตัวเลือกผู้ให้บริการ: "gemini", "medgemma", "huggingface"
-# - "gemini": ใช้ Google Gemini API (ง่ายที่สุด, ใช้ GEMINI_API_KEY)
-# - "medgemma": ใช้ MedGemma ผ่าน Hugging Face Inference API (ต้องมี HF_API_TOKEN)
-# - "huggingface": ใช้โมเดลอื่นๆ บน Hugging Face
-FEEDBACK_PROVIDER = "medgemma"
+# Primary model for feedback generation (Gemini 3 Pro for deep thinking)
+# โมเดลหลักสำหรับสร้าง feedback (Gemini 3 Pro สำหรับการคิดวิเคราะห์เชิงลึก)
+FEEDBACK_MODEL_NAME = "gemini-3-pro-preview"
 
-# Model name for feedback generation
-# ชื่อโมเดลสำหรับสร้าง feedback
-# - For Gemini: "gemini-2.0-flash-exp", "gemini-1.5-pro", etc.
-# - For MedGemma: "google/medgemma-1.5-4b-it", "google/medgemma-27b-text-it"
-# - For Hugging Face: any model ID from huggingface.co
-FEEDBACK_MODEL_NAME = "google/medgemma-1.5-4b-it"
-
-# Fallback model when primary model fails
-# โมเดลสำรองเมื่อโมเดลหลักล้มเหลว
-FEEDBACK_FALLBACK_PROVIDER = "gemini"
-FEEDBACK_FALLBACK_MODEL = "gemini-2.0-flash-exp"
+# Fallback model when primary model fails (Gemini 2.5 Pro)
+# โมเดลสำรองเมื่อโมเดลหลักล้มเหลว (Gemini 2.5 Pro)
+FEEDBACK_FALLBACK_MODEL = "gemini-2.5-pro"
 
 # Temperature for response generation (0.0 = deterministic, 1.0 = creative)
 # อุณหภูมิสำหรับการสร้างคำตอบ (0.0 = แน่นอน, 1.0 = สร้างสรรค์)
-FEEDBACK_TEMPERATURE = 0.3
+FEEDBACK_TEMPERATURE = 0.25
 
 # Max tokens for response / จำนวน token สูงสุดสำหรับคำตอบ
-FEEDBACK_MAX_TOKENS = 4096
+FEEDBACK_MAX_TOKENS = 8192
 
 # =============================================================================
-# HUGGING FACE SETTINGS / การตั้งค่า Hugging Face
+# THINKING CONFIG / การตั้งค่าการคิดวิเคราะห์
 # =============================================================================
 
-# Hugging Face Inference API endpoint type
-# ประเภท endpoint ของ Hugging Face Inference API
-# - "serverless": ใช้ Serverless Inference API ผ่าน HF Router (แนะนำ)
-# - "dedicated": ใช้ Dedicated Inference Endpoints (ต้องสร้าง endpoint เอง)
-HF_ENDPOINT_TYPE = "serverless"
+# Thinking level for Gemini 3 models ("high", "medium", "low")
+# ระดับการคิดวิเคราะห์สำหรับโมเดล Gemini 3 ("high", "medium", "low")
+FEEDBACK_THINKING_LEVEL = "high"
 
-# HF Router base URL for serverless inference (replaces deprecated api-inference.huggingface.co)
-# URL ฐานของ HF Router สำหรับ serverless inference (แทนที่ api-inference.huggingface.co ที่เลิกใช้)
-HF_ROUTER_BASE_URL = "https://router.huggingface.co/hf-inference/models"
-
-# For dedicated endpoints, specify the full URL
-# สำหรับ dedicated endpoints ระบุ URL เต็ม
-# Example: "https://xxxx.us-east-1.aws.endpoints.huggingface.cloud"
-HF_DEDICATED_ENDPOINT_URL = ""
-
-# Timeout for Hugging Face API calls (seconds)
-# Timeout สำหรับการเรียก Hugging Face API (วินาที)
-HF_API_TIMEOUT = 120
-
-# Retry settings for model loading (serverless models may need warm-up)
-# การตั้งค่า retry สำหรับการโหลดโมเดล (serverless อาจต้องรอ warm-up)
-HF_MAX_RETRIES = 3
-HF_RETRY_DELAY = 10  # seconds between retries
+# Thinking budget for Gemini 2.5 Pro fallback (max thinking tokens)
+# งบประมาณการคิดสำหรับ Gemini 2.5 Pro สำรอง (จำนวน token คิดสูงสุด)
+FEEDBACK_FALLBACK_THINKING_BUDGET = 32768
 
 # =============================================================================
 # OUTPUT FORMAT / รูปแบบผลลัพธ์
@@ -73,6 +46,9 @@ HF_RETRY_DELAY = 10  # seconds between retries
 # Output format: "json" (recommended for parsing) or "markdown"
 # รูปแบบผลลัพธ์: "json" (แนะนำสำหรับการ parse) หรือ "markdown"
 FEEDBACK_OUTPUT_FORMAT = "json"
+
+# Response MIME type for structured output / ประเภท MIME สำหรับผลลัพธ์แบบมีโครงสร้าง
+FEEDBACK_RESPONSE_MIME_TYPE = "application/json"
 
 # =============================================================================
 # GOOGLE SHEETS SETTINGS / การตั้งค่า Google Sheets

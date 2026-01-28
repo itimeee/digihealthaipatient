@@ -62,19 +62,22 @@ VALID_MODEL_NAMES = [
 ]
 
 
-def get_valid_model_name(model_name: str) -> str:
+def get_valid_model_name(model_name: str, default_model: str = None) -> str:
     """
     Get a valid model name, mapping old names to new ones if needed.
     รับชื่อโมเดลที่ถูกต้อง โดยแมปชื่อเก่าไปยังชื่อใหม่ถ้าจำเป็น
 
     Args:
         model_name: Original model name from case config
+        default_model: Fallback model if model_name is unknown (defaults to DEFAULT_CASE_MODEL)
 
     Returns:
         Valid model name to use with the API
     """
+    fallback = default_model or DEFAULT_CASE_MODEL
+
     if not model_name:
-        return DEFAULT_CASE_MODEL
+        return fallback
 
     # Check if mapping exists / ตรวจสอบว่ามีการแมปหรือไม่
     if model_name in MODEL_NAME_MAPPING:
@@ -84,9 +87,9 @@ def get_valid_model_name(model_name: str) -> str:
     if model_name in VALID_MODEL_NAMES:
         return model_name
 
-    # Unknown model - return default with warning / โมเดลไม่รู้จัก - คืนค่าเริ่มต้นพร้อมเตือน
-    print(f"[WARNING] Unknown model '{model_name}', using default: {DEFAULT_CASE_MODEL}")
-    return DEFAULT_CASE_MODEL
+    # Unknown model - return fallback with warning / โมเดลไม่รู้จัก - คืนค่าเริ่มต้นพร้อมเตือน
+    print(f"[WARNING] Unknown model '{model_name}', using fallback: {fallback}")
+    return fallback
 
 
 # =============================================================================

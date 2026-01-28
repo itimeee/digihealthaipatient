@@ -1,43 +1,36 @@
 """
 Feedback Service / บริการสร้าง Feedback
 ========================================
-This module handles the generation of feedback using the configured model.
-Supports multiple providers: Gemini, MedGemma (via Hugging Face), and generic Hugging Face models.
+This module handles the generation of feedback using Gemini AI models.
+Uses Gemini 3 Pro (primary) with deep thinking for comprehensive evaluation.
 
-โมดูลนี้จัดการการสร้าง feedback โดยใช้โมเดลที่กำหนดไว้
-รองรับหลาย providers: Gemini, MedGemma (ผ่าน Hugging Face), และโมเดล Hugging Face ทั่วไป
+โมดูลนี้จัดการการสร้าง feedback โดยใช้โมเดล Gemini AI
+ใช้ Gemini 3 Pro (หลัก) พร้อมการคิดวิเคราะห์เชิงลึกสำหรับการประเมินอย่างครอบคลุม
 """
 
 import json
 import re
-import time
-import requests
 import streamlit as st
 
-# Import GenAI client for Gemini / นำเข้า GenAI client สำหรับ Gemini
+# Import GenAI client and types / นำเข้า GenAI client และ types
 from genai_client import (
     get_client,
     generate_content_sync,
-    extract_text,
+    types,
 )
 from model_config import get_valid_model_name
 
 from feedback_config import (
-    FEEDBACK_PROVIDER,
     FEEDBACK_MODEL_NAME,
+    FEEDBACK_FALLBACK_MODEL,
     FEEDBACK_TEMPERATURE,
     FEEDBACK_OUTPUT_FORMAT,
     FEEDBACK_SYSTEM_PROMPT,
     FEEDBACK_USER_PROMPT_TEMPLATE,
-    FEEDBACK_FALLBACK_PROVIDER,
-    FEEDBACK_FALLBACK_MODEL,
     FEEDBACK_MAX_TOKENS,
-    HF_ENDPOINT_TYPE,
-    HF_ROUTER_BASE_URL,
-    HF_DEDICATED_ENDPOINT_URL,
-    HF_API_TIMEOUT,
-    HF_MAX_RETRIES,
-    HF_RETRY_DELAY,
+    FEEDBACK_THINKING_LEVEL,
+    FEEDBACK_FALLBACK_THINKING_BUDGET,
+    FEEDBACK_RESPONSE_MIME_TYPE,
 )
 
 
@@ -186,10 +179,34 @@ def get_fallback_feedback(error_message: str = None) -> dict:
     return result
 
 
+def _get_thinking_config_for_model(model_name: str):
+    """
+    Get appropriate ThinkingConfig based on model family.
+    รับ ThinkingConfig ที่เหมาะสมตามตระกูลโมเดล
+
+    Args:
+        model_name: Name of the model
+
+    Returns:
+        ThinkingConfig object or None
+    """
+    if model_name.startswith("gemini-3"):
+        # Gemini 3 models use thinking_level
+        print(f"[INFO] Using thinking_level='{FEEDBACK_THINKING_LEVEL}' for {model_name}")
+        return types.ThinkingConfig(thinking_level=FEEDBACK_THINKING_LEVEL)
+    elif model_name == "gemini-2.5-pro":
+        # Gemini 2.5 Pro uses thinking_budget
+        print(f"[INFO] Using thinking_budget={FEEDBACK_FALLBACK_THINKING_BUDGET} for {model_name}")
+        return types.ThinkingConfig(thinking_budget=FEEDBACK_FALLBACK_THINKING_BUDGET)
+    else:
+        # Other models don't support thinking config
+        return None
+
+
 def generate_feedback_gemini(payload: dict, model_name: str = None) -> dict:
     """
-    Generate feedback using Google Gemini API (new google-genai SDK).
-    สร้าง feedback โดยใช้ Google Gemini API (google-genai SDK ใหม่)
+    Generate feedback using Google Gemini API with thinking support.
+    สร้าง feedback โดยใช้ Google Gemini API พร้อมการคิดวิเคราะห์เชิงลึก
 
     Args:
         payload: Session data dictionary
@@ -204,12 +221,12 @@ def generate_feedback_gemini(payload: dict, model_name: str = None) -> dict:
             get_client()
         except ValueError as e:
             print(f"[ERROR] GenAI client error: {e}")
-            return get_fallback_feedback(str(e))
+            return None
 
         # Use provided model name or default, with validation
         # ใช้ชื่อโมเดลที่ให้มาหรือค่าเริ่มต้น พร้อมการตรวจสอบ
         raw_model = model_name or FEEDBACK_MODEL_NAME
-        use_model = get_valid_model_name(raw_model)
+        use_model = get_valid_model_name(raw_model, default_model=FEEDBACK_MODEL_NAME)
 
         print(f"[INFO] Generating feedback with model: {use_model}")
 
@@ -219,21 +236,30 @@ def generate_feedback_gemini(payload: dict, model_name: str = None) -> dict:
         # Combine system and user prompts / รวม system และ user prompts
         full_prompt = f"{FEEDBACK_SYSTEM_PROMPT}\n\n---\n\n{user_prompt}"
 
-        # Generate response using new SDK / สร้างคำตอบโดยใช้ SDK ใหม่
+        # Get thinking config for model / รับ thinking config สำหรับโมเดล
+        thinking_config = _get_thinking_config_for_model(use_model)
+
+        # Determine response_mime_type (only for JSON output)
+        # กำหนด response_mime_type (เฉพาะสำหรับ JSON output)
+        response_mime_type = FEEDBACK_RESPONSE_MIME_TYPE if FEEDBACK_OUTPUT_FORMAT == "json" else None
+
+        # Generate response / สร้างคำตอบ
         try:
             response_text = generate_content_sync(
                 model=use_model,
                 contents=full_prompt,
                 temperature=FEEDBACK_TEMPERATURE,
                 max_output_tokens=FEEDBACK_MAX_TOKENS,
+                thinking_config=thinking_config,
+                response_mime_type=response_mime_type,
             )
         except ValueError as e:
             print(f"[ERROR] Generation failed: {e}")
-            return get_fallback_feedback(str(e))
+            return None
 
         if not response_text or not response_text.strip():
             print("[ERROR] Empty response from Gemini")
-            return get_fallback_feedback("Empty response from Gemini")
+            return None
 
         # Parse JSON response / แปลง JSON จากคำตอบ
         if FEEDBACK_OUTPUT_FORMAT == "json":
@@ -249,202 +275,26 @@ def generate_feedback_gemini(payload: dict, model_name: str = None) -> dict:
         result["is_fallback"] = False
         result["model_used"] = use_model
         result["provider"] = "gemini"
+        if thinking_config:
+            result["thinking_enabled"] = True
 
         return result
 
     except Exception as e:
         print(f"[ERROR] Gemini API error: {e}")
-        return get_fallback_feedback(str(e))
-
-
-def generate_feedback_huggingface(payload: dict, model_id: str = None) -> dict:
-    """
-    Generate feedback using Hugging Face Inference API.
-    สร้าง feedback โดยใช้ Hugging Face Inference API
-
-    Supports both Serverless Inference API (via HF Router) and Dedicated Inference Endpoints.
-    รองรับทั้ง Serverless Inference API (ผ่าน HF Router) และ Dedicated Inference Endpoints
-
-    Args:
-        payload: Session data dictionary
-        model_id: Override model ID (default uses FEEDBACK_MODEL_NAME)
-
-    Returns:
-        Feedback dictionary with interview_feedback and clinical_feedback
-    """
-    try:
-        # Get API token from secrets / ดึง API token จาก secrets
-        api_token = st.secrets.get("HF_API_TOKEN")
-        if not api_token:
-            print("[ERROR] HF_API_TOKEN not found in secrets")
-            return None  # Return None to trigger fallback
-
-        # Use provided model ID or default / ใช้ model ID ที่ให้มาหรือค่าเริ่มต้น
-        use_model = model_id or FEEDBACK_MODEL_NAME
-
-        # Determine API URL / กำหนด API URL
-        if HF_ENDPOINT_TYPE == "dedicated" and HF_DEDICATED_ENDPOINT_URL:
-            api_url = HF_DEDICATED_ENDPOINT_URL
-            print(f"[INFO] Using dedicated endpoint: {api_url}")
-        else:
-            # Serverless Inference API via HF Router (new recommended endpoint)
-            # ใช้ HF Router แทน api-inference.huggingface.co ที่เลิกใช้แล้ว
-            api_url = f"{HF_ROUTER_BASE_URL}/{use_model}"
-            print(f"[INFO] Using HF Router: {api_url}")
-
-        # Build prompt / สร้าง prompt
-        user_prompt = build_feedback_prompt(payload)
-        full_prompt = f"{FEEDBACK_SYSTEM_PROMPT}\n\n---\n\n{user_prompt}"
-
-        # Prepare headers / เตรียม headers
-        headers = {
-            "Authorization": f"Bearer {api_token}",
-            "Content-Type": "application/json",
-        }
-
-        # Prepare payload for chat completion / เตรียม payload สำหรับ chat completion
-        # MedGemma uses chat format / MedGemma ใช้รูปแบบ chat
-        request_payload = {
-            "inputs": full_prompt,
-            "parameters": {
-                "max_new_tokens": FEEDBACK_MAX_TOKENS,
-                "temperature": FEEDBACK_TEMPERATURE,
-                "return_full_text": False,
-                "do_sample": True if FEEDBACK_TEMPERATURE > 0 else False,
-            }
-        }
-
-        # Make request with retry logic / ส่ง request พร้อม retry logic
-        response_text = None
-        last_error = None
-
-        for attempt in range(HF_MAX_RETRIES):
-            try:
-                print(f"[INFO] HuggingFace API attempt {attempt + 1}/{HF_MAX_RETRIES}")
-
-                response = requests.post(
-                    api_url,
-                    headers=headers,
-                    json=request_payload,
-                    timeout=HF_API_TIMEOUT
-                )
-
-                # Handle specific error codes with helpful messages
-                # จัดการ error codes เฉพาะพร้อมข้อความที่เป็นประโยชน์
-
-                # 401/403 - Authentication/Authorization error
-                if response.status_code in (401, 403):
-                    error_msg = f"HTTP {response.status_code}: Authentication failed"
-                    print(f"[ERROR] {error_msg}")
-                    print("[ERROR] Your HF_API_TOKEN likely lacks 'Inference Providers' permission.")
-                    print("[ERROR] Go to https://huggingface.co/settings/tokens and ensure your token has the required permissions.")
-                    last_error = error_msg
-                    return None  # Don't retry auth errors
-
-                # 404 - Model not found
-                if response.status_code == 404:
-                    error_msg = f"HTTP 404: Model '{use_model}' not found"
-                    print(f"[ERROR] {error_msg}")
-                    print(f"[ERROR] The model '{use_model}' may not be available on hf-inference.")
-                    print("[ERROR] Consider switching to a different model or using a dedicated endpoint.")
-                    last_error = error_msg
-                    return None  # Don't retry 404 errors
-
-                # 503 - Model loading / จัดการ 503 - โมเดลกำลังโหลด
-                if response.status_code == 503:
-                    try:
-                        error_data = response.json()
-                        estimated_time = error_data.get("estimated_time", HF_RETRY_DELAY)
-                    except Exception:
-                        estimated_time = HF_RETRY_DELAY
-                    print(f"[INFO] Model loading, waiting {estimated_time}s...")
-                    time.sleep(min(estimated_time, HF_RETRY_DELAY * 2))
-                    continue
-
-                # Handle other errors / จัดการ error อื่นๆ
-                if response.status_code != 200:
-                    last_error = f"HTTP {response.status_code}: {response.text[:200]}"
-                    print(f"[ERROR] HuggingFace API error: {last_error}")
-                    if attempt < HF_MAX_RETRIES - 1:
-                        time.sleep(HF_RETRY_DELAY)
-                    continue
-
-                # Parse response / แปลง response
-                result_data = response.json()
-
-                # Extract generated text / ดึงข้อความที่สร้าง
-                if isinstance(result_data, list) and len(result_data) > 0:
-                    # Standard format: [{"generated_text": "..."}]
-                    response_text = result_data[0].get("generated_text", "")
-                elif isinstance(result_data, dict):
-                    # Alternative format: {"generated_text": "..."}
-                    response_text = result_data.get("generated_text", "")
-
-                if response_text:
-                    break
-
-            except requests.exceptions.Timeout:
-                last_error = f"Request timeout after {HF_API_TIMEOUT}s"
-                print(f"[ERROR] {last_error}")
-                if attempt < HF_MAX_RETRIES - 1:
-                    time.sleep(HF_RETRY_DELAY)
-
-            except requests.exceptions.RequestException as e:
-                last_error = str(e)
-                print(f"[ERROR] Request error: {last_error}")
-                if attempt < HF_MAX_RETRIES - 1:
-                    time.sleep(HF_RETRY_DELAY)
-
-        # Check if we got a response / ตรวจสอบว่าได้ response หรือไม่
-        if not response_text:
-            print(f"[ERROR] No response after {HF_MAX_RETRIES} attempts. Last error: {last_error}")
-            return None  # Return None to trigger fallback
-
-        # Parse JSON response / แปลง JSON จากคำตอบ
-        if FEEDBACK_OUTPUT_FORMAT == "json":
-            result = parse_json_response(response_text)
-        else:
-            result = {
-                "raw_text": response_text,
-                "format": "markdown"
-            }
-
-        # Add metadata / เพิ่ม metadata
-        result["is_fallback"] = False
-        result["model_used"] = use_model
-        result["provider"] = "huggingface"
-
-        return result
-
-    except Exception as e:
-        print(f"[ERROR] HuggingFace API error: {e}")
-        return None  # Return None to trigger fallback
-
-
-def generate_feedback_medgemma(payload: dict) -> dict:
-    """
-    Generate feedback using MedGemma via Hugging Face.
-    สร้าง feedback โดยใช้ MedGemma ผ่าน Hugging Face
-
-    This is a wrapper that uses the HuggingFace function with MedGemma-specific settings.
-    นี่คือ wrapper ที่ใช้ฟังก์ชัน HuggingFace กับการตั้งค่าเฉพาะ MedGemma
-
-    Args:
-        payload: Session data dictionary
-
-    Returns:
-        Feedback dictionary or None if failed (triggers fallback)
-    """
-    return generate_feedback_huggingface(payload, model_id=FEEDBACK_MODEL_NAME)
+        return None
 
 
 def generate_feedback(payload: dict) -> dict:
     """
-    Main function to generate feedback using configured provider.
-    ฟังก์ชันหลักสำหรับสร้าง feedback โดยใช้ provider ที่กำหนดไว้
+    Main function to generate feedback using Gemini models.
+    ฟังก์ชันหลักสำหรับสร้าง feedback โดยใช้โมเดล Gemini
 
-    Supports automatic fallback to Gemini if primary provider fails.
-    รองรับ fallback อัตโนมัติไปยัง Gemini หากผู้ให้บริการหลักล้มเหลว
+    Uses Gemini 3 Pro as primary with fallback to Gemini 2.5 Pro.
+    Both models use deep thinking for comprehensive analysis.
+
+    ใช้ Gemini 3 Pro เป็นหลักพร้อม fallback ไปยัง Gemini 2.5 Pro
+    ทั้งสองโมเดลใช้การคิดวิเคราะห์เชิงลึกสำหรับการวิเคราะห์อย่างครอบคลุม
 
     Args:
         payload: Session data dictionary containing:
@@ -467,43 +317,29 @@ def generate_feedback(payload: dict) -> dict:
             "error_message": str (optional)
         }
     """
-    result = None
+    # Try primary model (Gemini 3 Pro) / ลองโมเดลหลัก (Gemini 3 Pro)
+    print(f"[INFO] Trying primary model: {FEEDBACK_MODEL_NAME}")
+    result = generate_feedback_gemini(payload, model_name=FEEDBACK_MODEL_NAME)
 
-    # Try primary provider / ลองผู้ให้บริการหลัก
-    if FEEDBACK_PROVIDER == "gemini":
-        result = generate_feedback_gemini(payload)
-
-    elif FEEDBACK_PROVIDER == "medgemma":
-        print(f"[INFO] Using MedGemma provider: {FEEDBACK_MODEL_NAME}")
-        result = generate_feedback_medgemma(payload)
-
-    elif FEEDBACK_PROVIDER == "huggingface":
-        print(f"[INFO] Using HuggingFace provider: {FEEDBACK_MODEL_NAME}")
-        result = generate_feedback_huggingface(payload)
-
-    else:
-        print(f"[WARNING] Unknown provider: {FEEDBACK_PROVIDER}")
-
-    # Check if primary succeeded / ตรวจสอบว่าผู้ให้บริการหลักสำเร็จหรือไม่
-    if result and not result.get("is_fallback"):
+    # Check if primary succeeded / ตรวจสอบว่าโมเดลหลักสำเร็จหรือไม่
+    if result and not result.get("is_fallback") and not result.get("parse_failed"):
         return result
 
-    # Try fallback provider if configured / ลอง fallback provider หากกำหนดไว้
-    if FEEDBACK_FALLBACK_PROVIDER and FEEDBACK_FALLBACK_PROVIDER != FEEDBACK_PROVIDER:
-        print(f"[INFO] Primary provider failed, trying fallback: {FEEDBACK_FALLBACK_PROVIDER}")
+    # Try fallback model (Gemini 2.5 Pro) / ลองโมเดลสำรอง (Gemini 2.5 Pro)
+    print(f"[INFO] Primary model failed, trying fallback: {FEEDBACK_FALLBACK_MODEL}")
+    fallback_result = generate_feedback_gemini(payload, model_name=FEEDBACK_FALLBACK_MODEL)
 
-        if FEEDBACK_FALLBACK_PROVIDER == "gemini":
-            fallback_result = generate_feedback_gemini(payload, model_name=FEEDBACK_FALLBACK_MODEL)
-            if fallback_result and not fallback_result.get("is_fallback"):
-                fallback_result["used_fallback"] = True
-                fallback_result["original_provider"] = FEEDBACK_PROVIDER
-                return fallback_result
+    if fallback_result and not fallback_result.get("is_fallback"):
+        fallback_result["used_fallback"] = True
+        fallback_result["original_model"] = FEEDBACK_MODEL_NAME
+        return fallback_result
 
-    # Return the result or fallback / คืนค่าผลลัพธ์หรือ fallback
+    # If primary had partial result, return it / ถ้าโมเดลหลักมีผลลัพธ์บางส่วน ให้คืนค่า
     if result:
         return result
 
-    return get_fallback_feedback("All providers failed")
+    # All models failed / โมเดลทั้งหมดล้มเหลว
+    return get_fallback_feedback("All models failed to generate feedback")
 
 
 def format_transcript_for_display(chat_history: list) -> str:

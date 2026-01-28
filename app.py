@@ -1514,9 +1514,12 @@ def page_end():
                         "answers": answers,
                     }
 
-                    # Generate feedback with spinner / สร้าง feedback พร้อม spinner
-                    with st.spinner("🔄 Generating AI feedback... กำลังสร้าง feedback จาก AI..."):
+                    # Generate feedback with status indicator / สร้าง feedback พร้อมแสดงสถานะ
+                    with st.status("🧠 กำลังวิเคราะห์การสัมภาษณ์และคำตอบของคุณ…", expanded=True) as status:
+                        st.write("Analyzing your interview and clinical reasoning...")
+                        st.write("โปรดรอสักครู่ ระบบกำลังประเมินทักษะการสัมภาษณ์และการวินิจฉัย")
                         feedback_result = generate_feedback(payload)
+                        status.update(label="✅ วิเคราะห์เสร็จแล้ว / Analysis Complete", state="complete", expanded=False)
 
                     # Store result / เก็บผลลัพธ์
                     st.session_state.feedback_result = feedback_result

@@ -166,6 +166,8 @@ def build_generation_config(
     top_k: int = None,
     stop_sequences: list = None,
     system_instruction: str = None,
+    thinking_config: "types.ThinkingConfig" = None,
+    response_mime_type: str = None,
 ) -> types.GenerateContentConfig:
     """
     Build generation configuration.
@@ -178,6 +180,8 @@ def build_generation_config(
         top_k: Top-k sampling parameter
         stop_sequences: List of stop sequences
         system_instruction: System instruction for the model
+        thinking_config: ThinkingConfig for deep reasoning (Gemini 3/2.5 Pro)
+        response_mime_type: MIME type for response (e.g., "application/json")
 
     Returns:
         GenerateContentConfig object
@@ -199,6 +203,12 @@ def build_generation_config(
 
     if system_instruction:
         config_dict["system_instruction"] = system_instruction
+
+    if thinking_config is not None:
+        config_dict["thinking_config"] = thinking_config
+
+    if response_mime_type:
+        config_dict["response_mime_type"] = response_mime_type
 
     return types.GenerateContentConfig(**config_dict)
 
@@ -306,6 +316,8 @@ def generate_content_sync(
     max_output_tokens: int = 4096,
     stop_sequences: list = None,
     system_instruction: str = None,
+    thinking_config: "types.ThinkingConfig" = None,
+    response_mime_type: str = None,
 ) -> str:
     """
     Generate content synchronously.
@@ -318,6 +330,8 @@ def generate_content_sync(
         max_output_tokens: Maximum tokens
         stop_sequences: Stop sequences list
         system_instruction: System instruction
+        thinking_config: ThinkingConfig for deep reasoning (Gemini 3/2.5 Pro)
+        response_mime_type: MIME type for response (e.g., "application/json")
 
     Returns:
         Generated text string
@@ -332,6 +346,8 @@ def generate_content_sync(
         max_output_tokens=max_output_tokens,
         stop_sequences=stop_sequences,
         system_instruction=system_instruction,
+        thinking_config=thinking_config,
+        response_mime_type=response_mime_type,
     )
 
     try:
