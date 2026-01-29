@@ -614,8 +614,20 @@ def initialize_session_state():
     if 'voice_message_to_send' not in st.session_state:
         st.session_state.voice_message_to_send = None
 
-    if 'voice_textbox' not in st.session_state:
-        st.session_state.voice_textbox = ""
+    # Two-key pattern for voice textbox: value key + widget key
+    # This ensures programmatic updates work reliably with Streamlit's widget state
+    if 'voice_text_value' not in st.session_state:
+        st.session_state.voice_text_value = ""
+
+    if 'voice_text_widget' not in st.session_state:
+        st.session_state.voice_text_widget = ""
+
+    # Two-key pattern for formulation textbox
+    if 'formulation_text_value' not in st.session_state:
+        st.session_state.formulation_text_value = ""
+
+    if 'formulation_text_widget' not in st.session_state:
+        st.session_state.formulation_text_widget = ""
 
 
 # ============================================================================
@@ -1180,12 +1192,14 @@ def page_chat():
             # Handle pending actions BEFORE widgets are rendered
             # จัดการ pending actions ก่อนที่ widgets จะถูกสร้าง
             if st.session_state.voice_clear_pending:
-                st.session_state["voice_textbox"] = ""
+                st.session_state.voice_text_value = ""
+                st.session_state.voice_text_widget = ""
                 st.session_state.voice_clear_pending = False
 
             if st.session_state.voice_send_pending and st.session_state.voice_message_to_send:
-                # Clear the textbox (message already captured in voice_message_to_send)
-                st.session_state["voice_textbox"] = ""
+                # Clear both keys (message already captured in voice_message_to_send)
+                st.session_state.voice_text_value = ""
+                st.session_state.voice_text_widget = ""
                 st.session_state.voice_send_pending = False
 
                 # Start AI response thread
@@ -1259,7 +1273,9 @@ def page_chat():
                                 st.session_state.voice_transcribing = False
 
                             if transcript:
-                                st.session_state["voice_textbox"] = transcript
+                                # Two-key pattern: set BOTH keys before rerun
+                                st.session_state.voice_text_value = transcript
+                                st.session_state.voice_text_widget = transcript
                                 # Force rerun to update text_area widget
                                 st.rerun()
                             elif error:
@@ -1268,20 +1284,25 @@ def page_chat():
             with voice_col2:
                 # Editable text area for transcribed text
                 # ช่อง text area สำหรับแก้ไขข้อความที่ถอดเสียง
-                # Use key="voice_textbox" so widget reads/writes directly to session state
+                # Two-key pattern: widget key is separate from value key
                 st.text_area(
                     "📝 ข้อความ (แก้ไขได้):",
                     height=100,
                     placeholder="บันทึกเสียงหรือพิมพ์ข้อความที่นี่...",
                     disabled=st.session_state.ai_responding,
-                    key="voice_textbox"
+                    key="voice_text_widget"
                 )
 
-                # Get current text from session state for button logic
-                current_text = st.session_state.get("voice_textbox", "").strip()
+                # Sync widget -> value immediately after rendering
+                st.session_state.voice_text_value = st.session_state.get("voice_text_widget", "")
+
+                # Get current text from value key for button logic
+                current_text = st.session_state.get("voice_text_value", "").strip()
 
                 # Debug caption (temporary - remove after verification)
-                st.caption(f"DEBUG: ai_responding={st.session_state.ai_responding}, text_len={len(current_text)}")
+                st.caption(f"DEBUG voice: ai_responding={st.session_state.ai_responding}, "
+                          f"widget_len={len(st.session_state.get('voice_text_widget',''))}, "
+                          f"value_len={len(st.session_state.get('voice_text_value',''))}")
 
                 # Send button / ปุ่มส่ง
                 send_col1, send_col2 = st.columns([1, 1])
@@ -1304,11 +1325,15 @@ def page_chat():
                             # 2. Set flags for pending actions (will be processed on next rerun BEFORE widget)
                             st.session_state.voice_send_pending = True
                             st.session_state.voice_message_to_send = current_text
-                            st.session_state.voice_input_key += 1
-                            st.session_state.last_processed_audio_key = -1
                             st.session_state.ai_responding = True
 
-                            # 3. Rerun to process pending send and show loading state
+                            # 3. Clear both keys and reset audio state
+                            st.session_state.voice_text_value = ""
+                            st.session_state.voice_text_widget = ""
+                            st.session_state.voice_input_key += 1
+                            st.session_state.last_processed_audio_key = -1
+
+                            # 4. Rerun to process pending send and show loading state
                             st.rerun()
 
                 with send_col2:
@@ -1318,7 +1343,9 @@ def page_chat():
                         disabled=st.session_state.ai_responding,
                         key="voice_clear_btn"
                     ):
-                        # Set flag for pending clear (will be processed on next rerun BEFORE widget)
+                        # Clear both keys
+                        st.session_state.voice_text_value = ""
+                        st.session_state.voice_text_widget = ""
                         st.session_state.voice_clear_pending = True
                         st.session_state.voice_input_key += 1
                         st.session_state.last_processed_audio_key = -1
@@ -1677,11 +1704,16 @@ def page_end():
                                 transcript, error = transcribe_audio(audio_bytes)
 
                             if transcript:
-                                # Append to existing formulation text or replace
-                                if st.session_state.formulation_text:
-                                    st.session_state.formulation_text += "\n" + transcript
+                                # Two-key pattern: set both keys
+                                # Append to existing text or replace
+                                if st.session_state.formulation_text_value:
+                                    new_text = st.session_state.formulation_text_value + "\n" + transcript
                                 else:
-                                    st.session_state.formulation_text = transcript
+                                    new_text = transcript
+                                st.session_state.formulation_text_value = new_text
+                                st.session_state.formulation_text_widget = new_text
+                                # Also update the legacy key for form compatibility
+                                st.session_state.formulation_text = new_text
                                 st.rerun()
                             elif error:
                                 st.error(f"❌ {error}")
@@ -1689,14 +1721,20 @@ def page_end():
             with formulation_mic_col2:
                 st.markdown("**Current formulation text:**")
                 st.text_area(
-                    "Preview (read-only)",
-                    value=st.session_state.formulation_text,
+                    "Preview (editable)",
                     height=100,
-                    disabled=True,
-                    key="formulation_preview"
+                    placeholder="บันทึกเสียงหรือพิมพ์ข้อความที่นี่...",
+                    key="formulation_text_widget"
                 )
+                # Sync widget -> value
+                st.session_state.formulation_text_value = st.session_state.get("formulation_text_widget", "")
+                # Also sync to legacy key for form compatibility
+                st.session_state.formulation_text = st.session_state.formulation_text_value
+
                 if st.button("🗑️ Clear formulation text", key="clear_formulation"):
-                    st.session_state.formulation_text = ''
+                    st.session_state.formulation_text_value = ""
+                    st.session_state.formulation_text_widget = ""
+                    st.session_state.formulation_text = ""
                     st.session_state.formulation_mic_key += 1
                     st.session_state.last_processed_formulation_key = -1
                     st.rerun()
