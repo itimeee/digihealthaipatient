@@ -614,20 +614,26 @@ def initialize_session_state():
     if 'voice_message_to_send' not in st.session_state:
         st.session_state.voice_message_to_send = None
 
-    # Two-key pattern for voice textbox: value key + widget key
-    # This ensures programmatic updates work reliably with Streamlit's widget state
+    # Widget key rotation pattern for voice textbox
+    # Rotating the key creates a fresh widget, allowing programmatic value updates
+    if 'voice_widget_version' not in st.session_state:
+        st.session_state.voice_widget_version = 0
+
+    if 'voice_text_pending' not in st.session_state:
+        st.session_state.voice_text_pending = None
+
     if 'voice_text_value' not in st.session_state:
         st.session_state.voice_text_value = ""
 
-    if 'voice_text_widget' not in st.session_state:
-        st.session_state.voice_text_widget = ""
+    # Widget key rotation pattern for formulation textbox
+    if 'formulation_widget_version' not in st.session_state:
+        st.session_state.formulation_widget_version = 0
 
-    # Two-key pattern for formulation textbox
+    if 'formulation_text_pending' not in st.session_state:
+        st.session_state.formulation_text_pending = None
+
     if 'formulation_text_value' not in st.session_state:
         st.session_state.formulation_text_value = ""
-
-    if 'formulation_text_widget' not in st.session_state:
-        st.session_state.formulation_text_widget = ""
 
     if 'formulation_clear_pending' not in st.session_state:
         st.session_state.formulation_clear_pending = False
@@ -1192,17 +1198,27 @@ def page_chat():
             # VOICE MODE INPUT / ช่องป้อนข้อมูลโหมดเสียง
             # ================================================================
 
-            # Handle pending actions BEFORE widgets are rendered
-            # จัดการ pending actions ก่อนที่ widgets จะถูกสร้าง
+            # Build dynamic widget key using version for key rotation
+            # สร้าง widget key แบบ dynamic โดยใช้ version สำหรับการหมุนเวียน key
+            voice_widget_key = f"voice_text_widget_{st.session_state.voice_widget_version}"
+
+            # Handle pending text BEFORE widget is rendered (key rotation pattern)
+            # จัดการ pending text ก่อน widget ถูกสร้าง (รูปแบบหมุนเวียน key)
+            if st.session_state.voice_text_pending is not None:
+                st.session_state[voice_widget_key] = st.session_state.voice_text_pending
+                st.session_state.voice_text_value = st.session_state.voice_text_pending
+                st.session_state.voice_text_pending = None
+
+            # Handle pending clear BEFORE widget is rendered
             if st.session_state.voice_clear_pending:
+                st.session_state[voice_widget_key] = ""
                 st.session_state.voice_text_value = ""
-                st.session_state.voice_text_widget = ""
                 st.session_state.voice_clear_pending = False
 
             if st.session_state.voice_send_pending and st.session_state.voice_message_to_send:
-                # Clear both keys (message already captured in voice_message_to_send)
+                # Clear the textbox (message already captured in voice_message_to_send)
+                st.session_state[voice_widget_key] = ""
                 st.session_state.voice_text_value = ""
-                st.session_state.voice_text_widget = ""
                 st.session_state.voice_send_pending = False
 
                 # Start AI response thread
@@ -1276,36 +1292,34 @@ def page_chat():
                                 st.session_state.voice_transcribing = False
 
                             if transcript:
-                                # Two-key pattern: set BOTH keys before rerun
-                                st.session_state.voice_text_value = transcript
-                                st.session_state.voice_text_widget = transcript
-                                # Force rerun to update text_area widget
+                                # Widget key rotation: set pending, bump version, rerun
+                                # การหมุนเวียน key: ตั้ง pending, เพิ่ม version, rerun
+                                st.session_state.voice_text_pending = transcript
+                                st.session_state.voice_widget_version += 1
                                 st.rerun()
                             elif error:
                                 st.error(f"❌ {error}")
 
             with voice_col2:
-                # Editable text area for transcribed text
-                # ช่อง text area สำหรับแก้ไขข้อความที่ถอดเสียง
-                # Two-key pattern: widget key is separate from value key
+                # Editable text area for transcribed text (using dynamic key for rotation)
+                # ช่อง text area สำหรับแก้ไขข้อความที่ถอดเสียง (ใช้ key แบบ dynamic)
                 st.text_area(
                     "📝 ข้อความ (แก้ไขได้):",
                     height=100,
                     placeholder="บันทึกเสียงหรือพิมพ์ข้อความที่นี่...",
                     disabled=st.session_state.ai_responding,
-                    key="voice_text_widget"
+                    key=voice_widget_key
                 )
 
                 # Sync widget -> value immediately after rendering
-                st.session_state.voice_text_value = st.session_state.get("voice_text_widget", "")
+                st.session_state.voice_text_value = st.session_state.get(voice_widget_key, "")
 
                 # Get current text from value key for button logic
-                current_text = st.session_state.get("voice_text_value", "").strip()
+                current_text = st.session_state.voice_text_value.strip()
 
                 # Debug caption (temporary - remove after verification)
-                st.caption(f"DEBUG voice: ai_responding={st.session_state.ai_responding}, "
-                          f"widget_len={len(st.session_state.get('voice_text_widget',''))}, "
-                          f"value_len={len(st.session_state.get('voice_text_value',''))}")
+                st.caption(f"DEBUG voice: version={st.session_state.voice_widget_version}, "
+                          f"key={voice_widget_key}, value_len={len(st.session_state.voice_text_value)}")
 
                 # Send button / ปุ่มส่ง
                 send_col1, send_col2 = st.columns([1, 1])
@@ -1330,8 +1344,10 @@ def page_chat():
                             st.session_state.voice_message_to_send = current_text
                             st.session_state.ai_responding = True
 
-                            # 3. Reset audio state (DO NOT modify voice_text_widget here - it's already rendered)
-                            st.session_state.voice_text_value = ""
+                            # 3. Rotate widget key to clear textbox on next render
+                            # หมุนเวียน widget key เพื่อล้าง textbox ในการ render ถัดไป
+                            st.session_state.voice_text_pending = ""
+                            st.session_state.voice_widget_version += 1
                             st.session_state.voice_input_key += 1
                             st.session_state.last_processed_audio_key = -1
 
@@ -1345,10 +1361,10 @@ def page_chat():
                         disabled=st.session_state.ai_responding,
                         key="voice_clear_btn"
                     ):
-                        # Set pending clear flag (DO NOT modify voice_text_widget here - it's already rendered)
-                        # The pending handler will clear voice_text_widget BEFORE the widget is rendered
-                        st.session_state.voice_text_value = ""
-                        st.session_state.voice_clear_pending = True
+                        # Rotate widget key to clear textbox on next render
+                        # หมุนเวียน widget key เพื่อล้าง textbox ในการ render ถัดไป
+                        st.session_state.voice_text_pending = ""
+                        st.session_state.voice_widget_version += 1
                         st.session_state.voice_input_key += 1
                         st.session_state.last_processed_audio_key = -1
                         st.rerun()
@@ -1685,10 +1701,21 @@ def page_end():
                        "The transcribed text will be used in the form below.")
             st.markdown("ใช้ไมโครโฟนเพื่อพูด psychodynamic formulation ข้อความที่ถอดเสียงจะถูกใช้ในฟอร์มด้านล่าง")
 
-            # Handle pending clear BEFORE widgets are rendered
+            # Build dynamic widget key using version for key rotation
+            # สร้าง widget key แบบ dynamic โดยใช้ version สำหรับการหมุนเวียน key
+            formulation_widget_key = f"formulation_text_widget_{st.session_state.formulation_widget_version}"
+
+            # Handle pending text BEFORE widget is rendered (key rotation pattern)
+            if st.session_state.formulation_text_pending is not None:
+                st.session_state[formulation_widget_key] = st.session_state.formulation_text_pending
+                st.session_state.formulation_text_value = st.session_state.formulation_text_pending
+                st.session_state.formulation_text = st.session_state.formulation_text_pending
+                st.session_state.formulation_text_pending = None
+
+            # Handle pending clear BEFORE widget is rendered
             if st.session_state.formulation_clear_pending:
+                st.session_state[formulation_widget_key] = ""
                 st.session_state.formulation_text_value = ""
-                st.session_state.formulation_text_widget = ""
                 st.session_state.formulation_text = ""
                 st.session_state.formulation_clear_pending = False
 
@@ -1713,16 +1740,14 @@ def page_end():
                                 transcript, error = transcribe_audio(audio_bytes)
 
                             if transcript:
-                                # Two-key pattern: set both keys
+                                # Widget key rotation: set pending, bump version, rerun
                                 # Append to existing text or replace
                                 if st.session_state.formulation_text_value:
                                     new_text = st.session_state.formulation_text_value + "\n" + transcript
                                 else:
                                     new_text = transcript
-                                st.session_state.formulation_text_value = new_text
-                                st.session_state.formulation_text_widget = new_text
-                                # Also update the legacy key for form compatibility
-                                st.session_state.formulation_text = new_text
+                                st.session_state.formulation_text_pending = new_text
+                                st.session_state.formulation_widget_version += 1
                                 st.rerun()
                             elif error:
                                 st.error(f"❌ {error}")
@@ -1733,18 +1758,20 @@ def page_end():
                     "Preview (editable)",
                     height=100,
                     placeholder="บันทึกเสียงหรือพิมพ์ข้อความที่นี่...",
-                    key="formulation_text_widget"
+                    key=formulation_widget_key
                 )
                 # Sync widget -> value
-                st.session_state.formulation_text_value = st.session_state.get("formulation_text_widget", "")
+                st.session_state.formulation_text_value = st.session_state.get(formulation_widget_key, "")
                 # Also sync to legacy key for form compatibility
                 st.session_state.formulation_text = st.session_state.formulation_text_value
 
+                # Debug caption (temporary - remove after verification)
+                st.caption(f"DEBUG formulation: version={st.session_state.formulation_widget_version}")
+
                 if st.button("🗑️ Clear formulation text", key="clear_formulation"):
-                    # Set pending clear flag (DO NOT modify formulation_text_widget here - it's already rendered)
-                    st.session_state.formulation_text_value = ""
-                    st.session_state.formulation_text = ""
-                    st.session_state.formulation_clear_pending = True
+                    # Rotate widget key to clear textbox on next render
+                    st.session_state.formulation_text_pending = ""
+                    st.session_state.formulation_widget_version += 1
                     st.session_state.formulation_mic_key += 1
                     st.session_state.last_processed_formulation_key = -1
                     st.rerun()
