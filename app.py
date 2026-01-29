@@ -602,6 +602,9 @@ def initialize_session_state():
     if 'last_processed_audio_key' not in st.session_state:
         st.session_state.last_processed_audio_key = -1
 
+    if 'last_processed_formulation_key' not in st.session_state:
+        st.session_state.last_processed_formulation_key = -1
+
 
 # ============================================================================
 # PAGE 1: HOMEPAGE / LOGIN
@@ -1207,20 +1210,21 @@ def page_chat():
 
                             if transcript:
                                 st.session_state.voice_draft_text = transcript
-                                st.success(f"✅ ถอดเสียงสำเร็จ: {transcript[:50]}...")
+                                # Force rerun to update text_area widget
+                                st.rerun()
                             elif error:
                                 st.error(f"❌ {error}")
 
             with voice_col2:
                 # Editable text area for transcribed text
                 # ช่อง text area สำหรับแก้ไขข้อความที่ถอดเสียง
+                # Use key="voice_draft_text" so widget reads/writes directly to session state
                 edited_text = st.text_area(
                     "📝 ข้อความ (แก้ไขได้):",
-                    value=st.session_state.voice_draft_text,
                     height=100,
                     placeholder="บันทึกเสียงหรือพิมพ์ข้อความที่นี่...",
                     disabled=st.session_state.ai_responding,
-                    key="voice_text_area"
+                    key="voice_draft_text"
                 )
 
                 # Send button / ปุ่มส่ง
@@ -1286,10 +1290,6 @@ def page_chat():
                         st.session_state.voice_input_key += 1
                         st.session_state.last_processed_audio_key = -1
                         st.rerun()
-
-                    # Button to use transcribed text (force refresh text area)
-                    if st.session_state.voice_draft_text:
-                        st.caption(f"📝 Transcribed: {st.session_state.voice_draft_text[:30]}...")
 
             # Show TTS audio for the latest patient response / แสดง audio TTS สำหรับคำตอบล่าสุด
             if st.session_state.pending_ai_audio:
@@ -1626,28 +1626,32 @@ def page_end():
             formulation_mic_col1, formulation_mic_col2 = st.columns([1, 2])
 
             with formulation_mic_col1:
+                current_formulation_key = st.session_state.formulation_mic_key
                 formulation_audio = st.audio_input(
                     "🎤 Record formulation",
-                    key=f"formulation_mic_{st.session_state.formulation_mic_key}"
+                    key=f"formulation_mic_{current_formulation_key}"
                 )
 
+                # Only process if not already processed
                 if formulation_audio is not None:
-                    audio_bytes = formulation_audio.read()
-                    if audio_bytes and len(audio_bytes) > 100:
-                        with st.spinner(STATUS_TRANSCRIBING):
-                            transcript, error = transcribe_audio(audio_bytes)
+                    if st.session_state.last_processed_formulation_key != current_formulation_key:
+                        audio_bytes = formulation_audio.read()
+                        if audio_bytes and len(audio_bytes) > 100:
+                            # Mark as processed BEFORE transcribing
+                            st.session_state.last_processed_formulation_key = current_formulation_key
 
-                        if transcript:
-                            # Append to existing formulation text or replace
-                            if st.session_state.formulation_text:
-                                st.session_state.formulation_text += "\n" + transcript
-                            else:
-                                st.session_state.formulation_text = transcript
-                            st.session_state.formulation_mic_key += 1
-                            st.success(f"✅ Transcribed: {transcript[:100]}...")
-                            st.rerun()
-                        elif error:
-                            st.error(f"❌ {error}")
+                            with st.spinner(STATUS_TRANSCRIBING):
+                                transcript, error = transcribe_audio(audio_bytes)
+
+                            if transcript:
+                                # Append to existing formulation text or replace
+                                if st.session_state.formulation_text:
+                                    st.session_state.formulation_text += "\n" + transcript
+                                else:
+                                    st.session_state.formulation_text = transcript
+                                st.rerun()
+                            elif error:
+                                st.error(f"❌ {error}")
 
             with formulation_mic_col2:
                 st.markdown("**Current formulation text:**")
@@ -1660,6 +1664,8 @@ def page_end():
                 )
                 if st.button("🗑️ Clear formulation text", key="clear_formulation"):
                     st.session_state.formulation_text = ''
+                    st.session_state.formulation_mic_key += 1
+                    st.session_state.last_processed_formulation_key = -1
                     st.rerun()
 
         with st.form("post_case_form"):
