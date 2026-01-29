@@ -629,6 +629,9 @@ def initialize_session_state():
     if 'formulation_text_widget' not in st.session_state:
         st.session_state.formulation_text_widget = ""
 
+    if 'formulation_clear_pending' not in st.session_state:
+        st.session_state.formulation_clear_pending = False
+
 
 # ============================================================================
 # PAGE 1: HOMEPAGE / LOGIN
@@ -1327,9 +1330,8 @@ def page_chat():
                             st.session_state.voice_message_to_send = current_text
                             st.session_state.ai_responding = True
 
-                            # 3. Clear both keys and reset audio state
+                            # 3. Reset audio state (DO NOT modify voice_text_widget here - it's already rendered)
                             st.session_state.voice_text_value = ""
-                            st.session_state.voice_text_widget = ""
                             st.session_state.voice_input_key += 1
                             st.session_state.last_processed_audio_key = -1
 
@@ -1343,9 +1345,9 @@ def page_chat():
                         disabled=st.session_state.ai_responding,
                         key="voice_clear_btn"
                     ):
-                        # Clear both keys
+                        # Set pending clear flag (DO NOT modify voice_text_widget here - it's already rendered)
+                        # The pending handler will clear voice_text_widget BEFORE the widget is rendered
                         st.session_state.voice_text_value = ""
-                        st.session_state.voice_text_widget = ""
                         st.session_state.voice_clear_pending = True
                         st.session_state.voice_input_key += 1
                         st.session_state.last_processed_audio_key = -1
@@ -1683,6 +1685,13 @@ def page_end():
                        "The transcribed text will be used in the form below.")
             st.markdown("ใช้ไมโครโฟนเพื่อพูด psychodynamic formulation ข้อความที่ถอดเสียงจะถูกใช้ในฟอร์มด้านล่าง")
 
+            # Handle pending clear BEFORE widgets are rendered
+            if st.session_state.formulation_clear_pending:
+                st.session_state.formulation_text_value = ""
+                st.session_state.formulation_text_widget = ""
+                st.session_state.formulation_text = ""
+                st.session_state.formulation_clear_pending = False
+
             formulation_mic_col1, formulation_mic_col2 = st.columns([1, 2])
 
             with formulation_mic_col1:
@@ -1732,9 +1741,10 @@ def page_end():
                 st.session_state.formulation_text = st.session_state.formulation_text_value
 
                 if st.button("🗑️ Clear formulation text", key="clear_formulation"):
+                    # Set pending clear flag (DO NOT modify formulation_text_widget here - it's already rendered)
                     st.session_state.formulation_text_value = ""
-                    st.session_state.formulation_text_widget = ""
                     st.session_state.formulation_text = ""
+                    st.session_state.formulation_clear_pending = True
                     st.session_state.formulation_mic_key += 1
                     st.session_state.last_processed_formulation_key = -1
                     st.rerun()
