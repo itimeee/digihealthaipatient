@@ -1411,7 +1411,7 @@ def page_chat():
                     # ห่อ bytes ใน BytesIO เพื่อความเข้ากันได้กับ browser
                     import io
                     audio_io = io.BytesIO(audio_bytes)
-                    st.audio(audio_io, format="audio/mpeg")
+                    st.audio(audio_io, format="audio/mpeg", autoplay=True)
                     st.session_state.last_tts_played_index = latest_assistant_idx
 
         else:
