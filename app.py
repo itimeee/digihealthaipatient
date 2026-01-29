@@ -605,6 +605,15 @@ def initialize_session_state():
     if 'last_processed_formulation_key' not in st.session_state:
         st.session_state.last_processed_formulation_key = -1
 
+    if 'voice_send_pending' not in st.session_state:
+        st.session_state.voice_send_pending = False
+
+    if 'voice_clear_pending' not in st.session_state:
+        st.session_state.voice_clear_pending = False
+
+    if 'voice_message_to_send' not in st.session_state:
+        st.session_state.voice_message_to_send = None
+
 
 # ============================================================================
 # PAGE 1: HOMEPAGE / LOGIN
@@ -1164,6 +1173,44 @@ def page_chat():
             # ================================================================
             # VOICE MODE INPUT / ช่องป้อนข้อมูลโหมดเสียง
             # ================================================================
+
+            # Handle pending actions BEFORE widgets are rendered
+            # จัดการ pending actions ก่อนที่ widgets จะถูกสร้าง
+            if st.session_state.voice_clear_pending:
+                st.session_state.voice_draft_text = ''
+                st.session_state.voice_clear_pending = False
+
+            if st.session_state.voice_send_pending and st.session_state.voice_message_to_send:
+                # Clear the draft text
+                st.session_state.voice_draft_text = ''
+                st.session_state.voice_send_pending = False
+
+                # Start AI response thread
+                def ai_response_callback_voice():
+                    """Background thread function to get AI response with TTS"""
+                    response = get_ai_response_threaded(
+                        st.session_state.chat_history,
+                        st.session_state.case_context
+                    )
+                    st.session_state.pending_ai_response = response
+
+                    # Generate TTS for voice mode
+                    if response and TTS_AUTO_PLAY:
+                        st.session_state.voice_generating_tts = True
+                        audio_bytes_tts, tts_error = synthesize_speech(response)
+                        st.session_state.voice_generating_tts = False
+                        if audio_bytes_tts:
+                            st.session_state.pending_ai_audio = audio_bytes_tts
+                        else:
+                            print(f"[WARNING] TTS failed: {tts_error}")
+
+                    st.session_state.ai_response_ready = True
+
+                thread = threading.Thread(target=ai_response_callback_voice, daemon=True)
+                add_script_run_ctx(thread)
+                thread.start()
+                st.session_state.voice_message_to_send = None
+
             st.markdown("---")
             st.markdown("### 🎤 Voice Input / ป้อนข้อมูลด้วยเสียง")
 
@@ -1244,39 +1291,14 @@ def page_chat():
                                 "content": edited_text.strip()
                             })
 
-                            # 2. Clear draft and reset audio state
-                            st.session_state.voice_draft_text = ''
+                            # 2. Set flags for pending actions (will be processed on next rerun BEFORE widget)
+                            st.session_state.voice_send_pending = True
+                            st.session_state.voice_message_to_send = edited_text.strip()
                             st.session_state.voice_input_key += 1
                             st.session_state.last_processed_audio_key = -1
                             st.session_state.ai_responding = True
 
-                            # 3. Define callback function for thread with TTS
-                            def ai_response_callback_voice():
-                                """Background thread function to get AI response with TTS"""
-                                response = get_ai_response_threaded(
-                                    st.session_state.chat_history,
-                                    st.session_state.case_context
-                                )
-                                st.session_state.pending_ai_response = response
-
-                                # Generate TTS for voice mode / สร้าง TTS สำหรับ voice mode
-                                if response and TTS_AUTO_PLAY:
-                                    st.session_state.voice_generating_tts = True
-                                    audio_bytes, tts_error = synthesize_speech(response)
-                                    st.session_state.voice_generating_tts = False
-                                    if audio_bytes:
-                                        st.session_state.pending_ai_audio = audio_bytes
-                                    else:
-                                        print(f"[WARNING] TTS failed: {tts_error}")
-
-                                st.session_state.ai_response_ready = True
-
-                            # 4. Start background thread
-                            thread = threading.Thread(target=ai_response_callback_voice, daemon=True)
-                            add_script_run_ctx(thread)
-                            thread.start()
-
-                            # 5. Rerun to show loading state
+                            # 3. Rerun to process pending send and show loading state
                             st.rerun()
 
                 with send_col2:
@@ -1286,7 +1308,8 @@ def page_chat():
                         disabled=st.session_state.ai_responding,
                         key="voice_clear_btn"
                     ):
-                        st.session_state.voice_draft_text = ''
+                        # Set flag for pending clear (will be processed on next rerun BEFORE widget)
+                        st.session_state.voice_clear_pending = True
                         st.session_state.voice_input_key += 1
                         st.session_state.last_processed_audio_key = -1
                         st.rerun()
