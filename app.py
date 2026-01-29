@@ -599,6 +599,9 @@ def initialize_session_state():
     if 'formulation_mic_key' not in st.session_state:
         st.session_state.formulation_mic_key = 0
 
+    if 'last_processed_audio_key' not in st.session_state:
+        st.session_state.last_processed_audio_key = -1
+
 
 # ============================================================================
 # PAGE 1: HOMEPAGE / LOGIN
@@ -1175,31 +1178,38 @@ def page_chat():
             with voice_col1:
                 # Microphone input with unique key
                 # ช่อง mic input พร้อม key ที่ไม่ซ้ำ
+                current_audio_key = st.session_state.voice_input_key
                 audio_data = st.audio_input(
                     "🎤 Record your message",
-                    key=f"voice_input_{st.session_state.voice_input_key}",
+                    key=f"voice_input_{current_audio_key}",
                     disabled=st.session_state.ai_responding
                 )
 
-                # Process recorded audio / ประมวลผลเสียงที่บันทึก
+                # Process recorded audio (only if not already processed)
+                # ประมวลผลเสียงที่บันทึก (เฉพาะเมื่อยังไม่ได้ process)
                 if audio_data is not None and not st.session_state.ai_responding:
-                    # Read audio bytes / อ่าน bytes ของเสียง
-                    audio_bytes = audio_data.read()
+                    # Check if this audio was already processed
+                    # ตรวจสอบว่า audio นี้ถูก process แล้วหรือยัง
+                    if st.session_state.last_processed_audio_key != current_audio_key:
+                        # Read audio bytes / อ่าน bytes ของเสียง
+                        audio_bytes = audio_data.read()
 
-                    if audio_bytes and len(audio_bytes) > 100:
-                        # Transcribe audio / ถอดเสียง
-                        with st.spinner(STATUS_TRANSCRIBING):
-                            st.session_state.voice_transcribing = True
-                            transcript, error = transcribe_audio(audio_bytes)
-                            st.session_state.voice_transcribing = False
+                        if audio_bytes and len(audio_bytes) > 100:
+                            # Mark as processed BEFORE transcribing
+                            # ทำเครื่องหมายว่า process แล้ว ก่อนถอดเสียง
+                            st.session_state.last_processed_audio_key = current_audio_key
 
-                        if transcript:
-                            st.session_state.voice_draft_text = transcript
-                            # Increment key to reset audio input
-                            st.session_state.voice_input_key += 1
-                            st.rerun()
-                        elif error:
-                            st.error(f"❌ {error}")
+                            # Transcribe audio / ถอดเสียง
+                            with st.spinner(STATUS_TRANSCRIBING):
+                                st.session_state.voice_transcribing = True
+                                transcript, error = transcribe_audio(audio_bytes)
+                                st.session_state.voice_transcribing = False
+
+                            if transcript:
+                                st.session_state.voice_draft_text = transcript
+                                st.success(f"✅ ถอดเสียงสำเร็จ: {transcript[:50]}...")
+                            elif error:
+                                st.error(f"❌ {error}")
 
             with voice_col2:
                 # Editable text area for transcribed text
@@ -1230,8 +1240,10 @@ def page_chat():
                                 "content": edited_text.strip()
                             })
 
-                            # 2. Clear draft and set AI responding flag
+                            # 2. Clear draft and reset audio state
                             st.session_state.voice_draft_text = ''
+                            st.session_state.voice_input_key += 1
+                            st.session_state.last_processed_audio_key = -1
                             st.session_state.ai_responding = True
 
                             # 3. Define callback function for thread with TTS
@@ -1272,7 +1284,12 @@ def page_chat():
                     ):
                         st.session_state.voice_draft_text = ''
                         st.session_state.voice_input_key += 1
+                        st.session_state.last_processed_audio_key = -1
                         st.rerun()
+
+                    # Button to use transcribed text (force refresh text area)
+                    if st.session_state.voice_draft_text:
+                        st.caption(f"📝 Transcribed: {st.session_state.voice_draft_text[:30]}...")
 
             # Show TTS audio for the latest patient response / แสดง audio TTS สำหรับคำตอบล่าสุด
             if st.session_state.pending_ai_audio:
