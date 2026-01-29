@@ -614,6 +614,9 @@ def initialize_session_state():
     if 'voice_message_to_send' not in st.session_state:
         st.session_state.voice_message_to_send = None
 
+    if 'voice_textbox' not in st.session_state:
+        st.session_state.voice_textbox = ""
+
 
 # ============================================================================
 # PAGE 1: HOMEPAGE / LOGIN
@@ -1177,12 +1180,12 @@ def page_chat():
             # Handle pending actions BEFORE widgets are rendered
             # จัดการ pending actions ก่อนที่ widgets จะถูกสร้าง
             if st.session_state.voice_clear_pending:
-                st.session_state.voice_draft_text = ''
+                st.session_state["voice_textbox"] = ""
                 st.session_state.voice_clear_pending = False
 
             if st.session_state.voice_send_pending and st.session_state.voice_message_to_send:
-                # Clear the draft text
-                st.session_state.voice_draft_text = ''
+                # Clear the textbox (message already captured in voice_message_to_send)
+                st.session_state["voice_textbox"] = ""
                 st.session_state.voice_send_pending = False
 
                 # Start AI response thread
@@ -1256,7 +1259,7 @@ def page_chat():
                                 st.session_state.voice_transcribing = False
 
                             if transcript:
-                                st.session_state.voice_draft_text = transcript
+                                st.session_state["voice_textbox"] = transcript
                                 # Force rerun to update text_area widget
                                 st.rerun()
                             elif error:
@@ -1265,35 +1268,42 @@ def page_chat():
             with voice_col2:
                 # Editable text area for transcribed text
                 # ช่อง text area สำหรับแก้ไขข้อความที่ถอดเสียง
-                # Use key="voice_draft_text" so widget reads/writes directly to session state
-                edited_text = st.text_area(
+                # Use key="voice_textbox" so widget reads/writes directly to session state
+                st.text_area(
                     "📝 ข้อความ (แก้ไขได้):",
                     height=100,
                     placeholder="บันทึกเสียงหรือพิมพ์ข้อความที่นี่...",
                     disabled=st.session_state.ai_responding,
-                    key="voice_draft_text"
+                    key="voice_textbox"
                 )
+
+                # Get current text from session state for button logic
+                current_text = st.session_state.get("voice_textbox", "").strip()
+
+                # Debug caption (temporary - remove after verification)
+                st.caption(f"DEBUG: ai_responding={st.session_state.ai_responding}, text_len={len(current_text)}")
 
                 # Send button / ปุ่มส่ง
                 send_col1, send_col2 = st.columns([1, 1])
                 with send_col1:
+                    send_disabled = st.session_state.ai_responding or (current_text == "")
                     if st.button(
                         "📤 Send / ส่ง",
                         use_container_width=True,
                         type="primary",
-                        disabled=st.session_state.ai_responding or not edited_text.strip(),
+                        disabled=send_disabled,
                         key="voice_send_btn"
                     ):
-                        if edited_text.strip():
+                        if current_text:
                             # 1. Append user message to history
                             st.session_state.chat_history.append({
                                 "role": "user",
-                                "content": edited_text.strip()
+                                "content": current_text
                             })
 
                             # 2. Set flags for pending actions (will be processed on next rerun BEFORE widget)
                             st.session_state.voice_send_pending = True
-                            st.session_state.voice_message_to_send = edited_text.strip()
+                            st.session_state.voice_message_to_send = current_text
                             st.session_state.voice_input_key += 1
                             st.session_state.last_processed_audio_key = -1
                             st.session_state.ai_responding = True
