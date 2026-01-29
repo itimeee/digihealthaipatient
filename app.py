@@ -1404,9 +1404,14 @@ def page_chat():
                     st.markdown("##### 🔊 Patient Response Audio")
 
                     # Debug: show audio info
-                    st.caption(f"DEBUG: Audio size={len(audio_bytes)} bytes, msg_idx={latest_assistant_idx}")
+                    st.caption(f"DEBUG: Audio size={len(audio_bytes)} bytes, msg_idx={latest_assistant_idx}, "
+                              f"header={audio_bytes[:4].hex()}")
 
-                    st.audio(audio_bytes, format="audio/mp3")
+                    # Wrap bytes in BytesIO for better browser compatibility
+                    # ห่อ bytes ใน BytesIO เพื่อความเข้ากันได้กับ browser
+                    import io
+                    audio_io = io.BytesIO(audio_bytes)
+                    st.audio(audio_io, format="audio/mpeg")
                     st.session_state.last_tts_played_index = latest_assistant_idx
 
         else:
