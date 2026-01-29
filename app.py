@@ -584,6 +584,11 @@ def initialize_session_state():
     if 'pending_ai_audio' not in st.session_state:
         st.session_state.pending_ai_audio = None
 
+    # Dictionary to store TTS audio by message index for persistence across reruns
+    # Dictionary เก็บ TTS audio ตาม index ของข้อความเพื่อคงอยู่ระหว่าง reruns
+    if 'tts_audio_by_msg' not in st.session_state:
+        st.session_state.tts_audio_by_msg = {}
+
     if 'last_tts_played_index' not in st.session_state:
         st.session_state.last_tts_played_index = -1
 
@@ -981,6 +986,16 @@ def page_chat():
             "role": "assistant",
             "content": sanitized_response
         })
+
+        # Store TTS audio by message index for persistence across reruns
+        # เก็บ TTS audio ตาม index ข้อความเพื่อคงอยู่ระหว่าง reruns
+        if st.session_state.pending_ai_audio:
+            msg_index = len(st.session_state.chat_history) - 1
+            st.session_state.tts_audio_by_msg[msg_index] = st.session_state.pending_ai_audio
+            print(f"[DEBUG] Stored TTS audio for message index {msg_index}, "
+                  f"size={len(st.session_state.pending_ai_audio)} bytes")
+            st.session_state.pending_ai_audio = None
+
         # Reset flags BEFORE rerun / รีเซ็ตสถานะก่อนรีรัน
         st.session_state.ai_responding = False
         st.session_state.ai_response_ready = False
@@ -1370,14 +1385,29 @@ def page_chat():
                         st.rerun()
 
             # Show TTS audio for the latest patient response / แสดง audio TTS สำหรับคำตอบล่าสุด
-            if st.session_state.pending_ai_audio:
-                current_msg_count = len(st.session_state.chat_history)
-                if current_msg_count > st.session_state.last_tts_played_index:
+            # Look for the most recent assistant message and check if we have audio for it
+            # ค้นหาข้อความล่าสุดของ assistant และตรวจสอบว่ามี audio หรือไม่
+            if st.session_state.tts_audio_by_msg:
+                # Find the latest assistant message index
+                latest_assistant_idx = None
+                for i in range(len(st.session_state.chat_history) - 1, -1, -1):
+                    if st.session_state.chat_history[i].get("role") == "assistant":
+                        latest_assistant_idx = i
+                        break
+
+                # If we have audio for this message and haven't played it yet
+                if (latest_assistant_idx is not None and
+                    latest_assistant_idx in st.session_state.tts_audio_by_msg and
+                    latest_assistant_idx > st.session_state.last_tts_played_index):
+
+                    audio_bytes = st.session_state.tts_audio_by_msg[latest_assistant_idx]
                     st.markdown("##### 🔊 Patient Response Audio")
-                    st.audio(st.session_state.pending_ai_audio, format="audio/mp3")
-                    st.session_state.last_tts_played_index = current_msg_count
-                    # Clear pending audio after playing
-                    st.session_state.pending_ai_audio = None
+
+                    # Debug: show audio info
+                    st.caption(f"DEBUG: Audio size={len(audio_bytes)} bytes, msg_idx={latest_assistant_idx}")
+
+                    st.audio(audio_bytes, format="audio/mp3")
+                    st.session_state.last_tts_played_index = latest_assistant_idx
 
         else:
             # ================================================================
