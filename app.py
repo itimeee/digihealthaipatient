@@ -607,6 +607,9 @@ def initialize_session_state():
     if 'last_processed_audio_key' not in st.session_state:
         st.session_state.last_processed_audio_key = -1
 
+    if 'last_processed_audio_id' not in st.session_state:
+        st.session_state.last_processed_audio_id = None
+
     if 'last_processed_formulation_key' not in st.session_state:
         st.session_state.last_processed_formulation_key = -1
 
@@ -1289,16 +1292,35 @@ def page_chat():
                 # Process recorded audio (only if not already processed)
                 # ประมวลผลเสียงที่บันทึก (เฉพาะเมื่อยังไม่ได้ process)
                 if audio_data is not None and not st.session_state.ai_responding:
-                    # Check if this audio was already processed
-                    # ตรวจสอบว่า audio นี้ถูก process แล้วหรือยัง
-                    if st.session_state.last_processed_audio_key != current_audio_key:
-                        # Read audio bytes / อ่าน bytes ของเสียง
-                        audio_bytes = audio_data.read()
+                    # Read audio bytes - seek to start first in case it was read before
+                    # อ่าน bytes ของเสียง - seek ไปต้นก่อนเผื่อถูกอ่านแล้ว
+                    try:
+                        audio_data.seek(0)
+                    except Exception:
+                        pass  # Some file-like objects don't support seek
+                    audio_bytes = audio_data.read()
 
-                        if audio_bytes and len(audio_bytes) > 100:
+                    # Create a hash of audio content to detect new recordings
+                    # สร้าง hash ของเนื้อหาเสียงเพื่อตรวจจับการบันทึกใหม่
+                    if audio_bytes and len(audio_bytes) > 100:
+                        import hashlib
+                        audio_hash = hashlib.md5(audio_bytes[:1000]).hexdigest()[:8]
+                        audio_id = f"{current_audio_key}_{audio_hash}"
+
+                        # Debug logging
+                        print(f"[DEBUG] Audio detected: key={current_audio_key}, "
+                              f"hash={audio_hash}, size={len(audio_bytes)}, "
+                              f"last_processed={st.session_state.get('last_processed_audio_id', 'none')}")
+
+                        # Check if this specific audio was already processed
+                        # ตรวจสอบว่า audio นี้ถูก process แล้วหรือยัง
+                        if st.session_state.get('last_processed_audio_id') != audio_id:
                             # Mark as processed BEFORE transcribing
                             # ทำเครื่องหมายว่า process แล้ว ก่อนถอดเสียง
+                            st.session_state.last_processed_audio_id = audio_id
                             st.session_state.last_processed_audio_key = current_audio_key
+
+                            print(f"[DEBUG] Processing new audio: {audio_id}")
 
                             # Transcribe audio / ถอดเสียง
                             with st.spinner(STATUS_TRANSCRIBING):
@@ -1307,13 +1329,17 @@ def page_chat():
                                 st.session_state.voice_transcribing = False
 
                             if transcript:
+                                print(f"[DEBUG] Transcription success: {transcript[:50]}...")
                                 # Widget key rotation: set pending, bump version, rerun
                                 # การหมุนเวียน key: ตั้ง pending, เพิ่ม version, rerun
                                 st.session_state.voice_text_pending = transcript
                                 st.session_state.voice_widget_version += 1
                                 st.rerun()
                             elif error:
+                                print(f"[DEBUG] Transcription error: {error}")
                                 st.error(f"❌ {error}")
+                        else:
+                            print(f"[DEBUG] Audio already processed: {audio_id}")
 
             with voice_col2:
                 # Editable text area for transcribed text (using dynamic key for rotation)
@@ -1365,6 +1391,7 @@ def page_chat():
                             st.session_state.voice_widget_version += 1
                             st.session_state.voice_input_key += 1
                             st.session_state.last_processed_audio_key = -1
+                            st.session_state.last_processed_audio_id = None
 
                             # 4. Rerun to process pending send and show loading state
                             st.rerun()
@@ -1382,6 +1409,7 @@ def page_chat():
                         st.session_state.voice_widget_version += 1
                         st.session_state.voice_input_key += 1
                         st.session_state.last_processed_audio_key = -1
+                        st.session_state.last_processed_audio_id = None
                         st.rerun()
 
             # Show TTS audio for the latest patient response / แสดง audio TTS สำหรับคำตอบล่าสุด
