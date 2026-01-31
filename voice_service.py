@@ -18,6 +18,7 @@ This module provides:
 import wave
 import io
 import re
+import json
 import streamlit as st
 from google.oauth2.service_account import Credentials
 
@@ -43,80 +44,275 @@ from voice_config import (
 
 
 # ============================================================================
+# CREDENTIAL LOADING / การโหลด Credentials
+# ============================================================================
+
+# Track if we've already logged the credential error (to avoid spam)
+_credential_error_logged = False
+
+
+def load_gcp_credentials() -> tuple:
+    """
+    Load GCP service account credentials from Streamlit secrets robustly.
+    โหลด GCP service account credentials จาก Streamlit secrets อย่าง robust
+
+    Supports:
+    - Dict-like TOML table format: st.secrets["gcp_service_account"] as mapping
+    - JSON string format: st.secrets["gcp_service_account"] as JSON string
+    - Normalizes private_key newlines (\\n -> \n)
+
+    Returns:
+        Tuple of (credentials_dict: dict, error_message: str or None)
+        - On success: (dict, None)
+        - On failure: (None, error_message)
+    """
+    global _credential_error_logged
+
+    try:
+        # Check if gcp_service_account exists in secrets
+        if "gcp_service_account" not in st.secrets:
+            error_msg = "gcp_service_account not found in secrets"
+            if not _credential_error_logged:
+                print(f"[VOICE][ERROR] {error_msg}")
+                _credential_error_logged = True
+            return None, error_msg
+
+        raw_creds = st.secrets["gcp_service_account"]
+
+        # Handle different formats
+        if isinstance(raw_creds, str):
+            # It's a JSON string, parse it
+            try:
+                credentials_dict = json.loads(raw_creds)
+                print("[VOICE][DEBUG] Parsed gcp_service_account from JSON string")
+            except json.JSONDecodeError as e:
+                error_msg = f"gcp_service_account is string but not valid JSON: {type(e).__name__}"
+                if not _credential_error_logged:
+                    print(f"[VOICE][ERROR] {error_msg}")
+                    _credential_error_logged = True
+                return None, error_msg
+        else:
+            # It's dict-like (TOML table), convert to dict
+            try:
+                credentials_dict = dict(raw_creds)
+                print("[VOICE][DEBUG] Loaded gcp_service_account from TOML table")
+            except Exception as e:
+                error_msg = f"Failed to convert gcp_service_account to dict: {type(e).__name__}"
+                if not _credential_error_logged:
+                    print(f"[VOICE][ERROR] {error_msg}")
+                    _credential_error_logged = True
+                return None, error_msg
+
+        # Normalize private_key newlines
+        # Some environments store literal "\\n" instead of actual newlines
+        if "private_key" in credentials_dict:
+            pk = credentials_dict["private_key"]
+            if isinstance(pk, str):
+                # Check if it has literal \n but no actual newlines
+                if "\\n" in pk and "\n" not in pk.replace("\\n", ""):
+                    credentials_dict["private_key"] = pk.replace("\\n", "\n")
+                    print("[VOICE][DEBUG] Normalized private_key newlines (\\\\n -> \\n)")
+
+        # Validate required fields
+        required_fields = ["type", "project_id", "private_key", "client_email"]
+        missing = [f for f in required_fields if f not in credentials_dict]
+        if missing:
+            error_msg = f"Missing required fields in gcp_service_account: {missing}"
+            if not _credential_error_logged:
+                print(f"[VOICE][ERROR] {error_msg}")
+                _credential_error_logged = True
+            return None, error_msg
+
+        # Log success (without exposing secrets)
+        project_id = credentials_dict.get("project_id", "unknown")
+        # Only show first few chars of project_id for debugging
+        project_hint = project_id[:8] + "..." if len(project_id) > 8 else project_id
+        print(f"[VOICE][DEBUG] Credentials loaded successfully (project: {project_hint})")
+
+        return credentials_dict, None
+
+    except Exception as e:
+        error_msg = f"Unexpected error loading credentials: {type(e).__name__}"
+        if not _credential_error_logged:
+            print(f"[VOICE][ERROR] {error_msg}: {str(e)[:100]}")
+            _credential_error_logged = True
+        return None, error_msg
+
+
+def get_credential_debug_info() -> dict:
+    """
+    Get safe debug information about credential status (no secrets exposed).
+    รับข้อมูล debug เกี่ยวกับสถานะ credentials อย่างปลอดภัย (ไม่เปิดเผย secrets)
+
+    Returns:
+        Dictionary with debug information safe to display
+    """
+    info = {
+        "has_gcp_service_account": False,
+        "gcp_service_account_type": "none",
+        "has_private_key": False,
+        "has_client_email": False,
+        "project_id_hint": None,
+        "error": None,
+    }
+
+    try:
+        if "gcp_service_account" not in st.secrets:
+            info["error"] = "gcp_service_account not in secrets"
+            return info
+
+        info["has_gcp_service_account"] = True
+        raw_creds = st.secrets["gcp_service_account"]
+
+        if isinstance(raw_creds, str):
+            info["gcp_service_account_type"] = "string"
+            try:
+                creds_dict = json.loads(raw_creds)
+            except json.JSONDecodeError:
+                info["error"] = "JSON parse failed"
+                return info
+        else:
+            info["gcp_service_account_type"] = "mapping"
+            creds_dict = dict(raw_creds)
+
+        info["has_private_key"] = "private_key" in creds_dict and bool(creds_dict.get("private_key"))
+        info["has_client_email"] = "client_email" in creds_dict and bool(creds_dict.get("client_email"))
+
+        if "project_id" in creds_dict:
+            pid = creds_dict["project_id"]
+            info["project_id_hint"] = pid[:8] + "..." if len(pid) > 8 else pid
+
+    except Exception as e:
+        info["error"] = f"{type(e).__name__}: {str(e)[:50]}"
+
+    return info
+
+
+# ============================================================================
 # CLIENT INITIALIZATION / การเริ่มต้น Client
 # ============================================================================
 
-@st.cache_resource
+# Store clients in module-level variables (not cached, re-created on each run)
+# This prevents caching None values
+_speech_client = None
+_tts_client = None
+_clients_initialized = False
+
+
 def get_speech_client():
     """
     Get Google Cloud Speech-to-Text client using service account credentials.
     สร้าง client สำหรับ Google Cloud Speech-to-Text จาก service account
 
+    Note: Removed @st.cache_resource to avoid caching None values.
+    Client is created once per module load.
+
     Returns:
         SpeechClient object or None if initialization fails
     """
+    global _speech_client, _clients_initialized
+
+    # Return cached client if available
+    if _speech_client is not None:
+        return _speech_client
+
+    # If already tried and failed, don't retry
+    if _clients_initialized and _speech_client is None:
+        return None
+
     try:
         from google.cloud import speech
 
-        # Load credentials from Streamlit secrets with appropriate scopes
-        # โหลด credentials จาก secrets พร้อม scopes ที่เหมาะสม
-        scopes = ["https://www.googleapis.com/auth/cloud-platform"]
-        credentials_dict = dict(st.secrets["gcp_service_account"])
-        credentials = Credentials.from_service_account_info(
-            credentials_dict,
-            scopes=scopes
-        )
+        # Load credentials using robust helper
+        credentials_dict, error = load_gcp_credentials()
+        if credentials_dict is None:
+            print(f"[VOICE][ERROR] Cannot create Speech client: {error}")
+            return None
 
-        # Create and return client / สร้างและคืน client
-        client = speech.SpeechClient(credentials=credentials)
-        print("[INFO] Speech-to-Text client initialized successfully")
-        return client
+        # Create credentials object
+        scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+        try:
+            credentials = Credentials.from_service_account_info(
+                credentials_dict,
+                scopes=scopes
+            )
+        except Exception as e:
+            print(f"[VOICE][ERROR] Failed to create Credentials: {type(e).__name__}: {str(e)[:100]}")
+            return None
+
+        # Create and store client
+        try:
+            _speech_client = speech.SpeechClient(credentials=credentials)
+            print("[VOICE][INFO] Speech-to-Text client initialized successfully")
+            return _speech_client
+        except Exception as e:
+            print(f"[VOICE][ERROR] Failed to init SpeechClient: {type(e).__name__}: {str(e)[:100]}")
+            return None
 
     except ImportError:
-        print("[ERROR] google-cloud-speech not installed")
-        return None
-    except KeyError:
-        print("[ERROR] gcp_service_account not found in secrets")
+        print("[VOICE][ERROR] google-cloud-speech not installed")
         return None
     except Exception as e:
-        print(f"[ERROR] Failed to initialize Speech client: {e}")
+        print(f"[VOICE][ERROR] Unexpected error in get_speech_client: {type(e).__name__}: {str(e)[:100]}")
         return None
+    finally:
+        _clients_initialized = True
 
 
-@st.cache_resource
 def get_tts_client():
     """
     Get Google Cloud Text-to-Speech client using service account credentials.
     สร้าง client สำหรับ Google Cloud Text-to-Speech จาก service account
 
+    Note: Removed @st.cache_resource to avoid caching None values.
+    Client is created once per module load.
+
     Returns:
         TextToSpeechClient object or None if initialization fails
     """
+    global _tts_client, _clients_initialized
+
+    # Return cached client if available
+    if _tts_client is not None:
+        return _tts_client
+
+    # If already tried and failed for speech, credentials are likely bad
+    # But still try TTS as it might have different requirements
+
     try:
         from google.cloud import texttospeech
 
-        # Load credentials from Streamlit secrets with appropriate scopes
-        # โหลด credentials จาก secrets พร้อม scopes ที่เหมาะสม
-        scopes = ["https://www.googleapis.com/auth/cloud-platform"]
-        credentials_dict = dict(st.secrets["gcp_service_account"])
-        credentials = Credentials.from_service_account_info(
-            credentials_dict,
-            scopes=scopes
-        )
+        # Load credentials using robust helper
+        credentials_dict, error = load_gcp_credentials()
+        if credentials_dict is None:
+            print(f"[VOICE][ERROR] Cannot create TTS client: {error}")
+            return None
 
-        # Create and return client / สร้างและคืน client
-        client = texttospeech.TextToSpeechClient(credentials=credentials)
-        print("[INFO] Text-to-Speech client initialized successfully")
-        return client
+        # Create credentials object
+        scopes = ["https://www.googleapis.com/auth/cloud-platform"]
+        try:
+            credentials = Credentials.from_service_account_info(
+                credentials_dict,
+                scopes=scopes
+            )
+        except Exception as e:
+            print(f"[VOICE][ERROR] Failed to create Credentials for TTS: {type(e).__name__}: {str(e)[:100]}")
+            return None
+
+        # Create and store client
+        try:
+            _tts_client = texttospeech.TextToSpeechClient(credentials=credentials)
+            print("[VOICE][INFO] Text-to-Speech client initialized successfully")
+            return _tts_client
+        except Exception as e:
+            print(f"[VOICE][ERROR] Failed to init TTSClient: {type(e).__name__}: {str(e)[:100]}")
+            return None
 
     except ImportError:
-        print("[ERROR] google-cloud-texttospeech not installed")
-        return None
-    except KeyError:
-        print("[ERROR] gcp_service_account not found in secrets")
+        print("[VOICE][ERROR] google-cloud-texttospeech not installed")
         return None
     except Exception as e:
-        print(f"[ERROR] Failed to initialize TTS client: {e}")
+        print(f"[VOICE][ERROR] Unexpected error in get_tts_client: {type(e).__name__}: {str(e)[:100]}")
         return None
 
 
@@ -419,19 +615,27 @@ def is_voice_service_available() -> tuple:
     return stt_available, tts_available
 
 
-def get_voice_service_status() -> dict:
+def get_voice_service_status(include_debug: bool = False) -> dict:
     """
     Get detailed status of voice services.
     รับสถานะโดยละเอียดของบริการเสียง
+
+    Args:
+        include_debug: If True, include safe debug info about credentials
 
     Returns:
         Dictionary with service status information
     """
     stt_available, tts_available = is_voice_service_available()
 
-    return {
+    status = {
         "stt_available": stt_available,
         "tts_available": tts_available,
         "voice_enabled": stt_available,  # Voice mode requires at least STT
         "full_voice_enabled": stt_available and tts_available,  # Full voice requires both
     }
+
+    if include_debug:
+        status["debug"] = get_credential_debug_info()
+
+    return status

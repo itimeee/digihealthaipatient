@@ -60,6 +60,7 @@ from voice_service import (
     transcribe_audio,
     synthesize_speech,
     is_voice_service_available,
+    get_voice_service_status,
 )
 
 # ============================================================================
@@ -1017,6 +1018,36 @@ def page_pre_brief():
                 st.warning("⚠️ Text-to-Speech ไม่พร้อมใช้งาน คำตอบจะแสดงเป็นข้อความเท่านั้น")
         else:
             st.warning("⚠️ **Voice Mode** is not available. Speech-to-Text API is not configured. Please check your Google Cloud setup or use Text Mode.")
+
+        # Optional debug widget (only shown if debug.voice_status is true in secrets)
+        # Debug widget ทางเลือก (แสดงเฉพาะเมื่อ debug.voice_status เป็น true ใน secrets)
+        try:
+            show_voice_debug = st.secrets.get("debug", {}).get("voice_status", False)
+        except Exception:
+            show_voice_debug = False
+
+        if show_voice_debug:
+            with st.expander("🔧 Voice Service Debug Info (for troubleshooting)"):
+                status = get_voice_service_status(include_debug=True)
+                debug_info = status.get("debug", {})
+
+                st.markdown("**Service Status:**")
+                st.write(f"- STT Available: {'✅' if status['stt_available'] else '❌'}")
+                st.write(f"- TTS Available: {'✅' if status['tts_available'] else '❌'}")
+
+                st.markdown("**Credential Status:**")
+                st.write(f"- Has gcp_service_account: {'✅' if debug_info.get('has_gcp_service_account') else '❌'}")
+                st.write(f"- Format type: `{debug_info.get('gcp_service_account_type', 'unknown')}`")
+                st.write(f"- Has private_key: {'✅' if debug_info.get('has_private_key') else '❌'}")
+                st.write(f"- Has client_email: {'✅' if debug_info.get('has_client_email') else '❌'}")
+
+                if debug_info.get("project_id_hint"):
+                    st.write(f"- Project ID hint: `{debug_info['project_id_hint']}`")
+
+                if debug_info.get("error"):
+                    st.error(f"Error: {debug_info['error']}")
+
+                st.caption("Check app logs for more details. Look for lines starting with [VOICE]")
     else:
         st.success("✅ **Text Mode selected.** You will type your questions and the AI patient will respond in text. Click 'Start Case' when you're ready to begin the interview.")
 
