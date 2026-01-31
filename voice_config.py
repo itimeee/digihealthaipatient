@@ -66,14 +66,17 @@ TTS_VOLUME_GAIN_DB = 0.0
 # Fixes pronunciation issues like "หมอ" being spelled out as "หอ-มอ-ออ"
 # แก้ปัญหาการออกเสียงเช่น "หมอ" ถูกสะกดเป็น "หอ-มอ-ออ"
 #
+# Uses zero-width characters to change tokenization without changing visible text
+# ใช้ zero-width character เพื่อเปลี่ยน tokenization โดยไม่เปลี่ยนข้อความที่เห็น
+#
 # Options / ตัวเลือก:
 #   - None or "": Disabled, no normalization
-#   - "maw": Replace "หมอ" -> "มอ" (shorter, may sound casual)
-#   - "zwj": Replace "หมอ" -> "ห\u200Cมอ" (Zero-Width Non-Joiner to change tokenization)
-#   - "physician": Replace "หมอ" -> "แพทย์", "คุณหมอ" -> "คุณแพทย์" (formal, guaranteed correct)
+#   - "zwnj": Replace "หมอ" -> "ห\u200Cมอ" (Zero-Width Non-Joiner) [default]
+#   - "zwsp": Replace "หมอ" -> "ห\u200Bมอ" (Zero-Width Space)
 #
-# Recommended: "physician" for most reliable pronunciation
-TTS_DOCTOR_PRONUNCIATION_MODE = "physician"
+# Only replaces standalone "หมอ", not compound words like "หมอฟัน", "หมอผี"
+# แทนเฉพาะคำว่า "หมอ" เดี่ยวๆ ไม่แทนคำประสม เช่น "หมอฟัน", "หมอผี"
+TTS_DOCTOR_FIX = "zwnj"
 
 
 # ============================================================================

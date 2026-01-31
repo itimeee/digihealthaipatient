@@ -31,7 +31,7 @@ from voice_config import (
     TTS_PITCH,
     TTS_AUDIO_ENCODING,
     TTS_VOLUME_GAIN_DB,
-    TTS_DOCTOR_PRONUNCIATION_MODE,
+    TTS_DOCTOR_FIX,
     VOICE_SAMPLE_RATE,
     ERROR_STT_FAILED,
     ERROR_TTS_FAILED,
@@ -257,7 +257,10 @@ def normalize_for_tts_th(text: str) -> str:
     ปรับข้อความภาษาไทยสำหรับ TTS เพื่อแก้ปัญหาการออกเสียง
 
     Fixes the word "หมอ" (doctor) being pronounced as "หอ-มอ-ออ"
-    instead of the correct pronunciation.
+    by inserting a zero-width character to change tokenization.
+
+    Only replaces standalone "หมอ", not compound words like "หมอฟัน", "หมอผี".
+    แทนเฉพาะคำว่า "หมอ" เดี่ยวๆ ไม่แทนคำประสม เช่น "หมอฟัน", "หมอผี"
 
     Args:
         text: Original text to normalize
@@ -265,27 +268,27 @@ def normalize_for_tts_th(text: str) -> str:
     Returns:
         Normalized text for TTS (original text is preserved in UI/transcript)
     """
-    if not text or not TTS_DOCTOR_PRONUNCIATION_MODE:
+    if not text or not TTS_DOCTOR_FIX:
         return text
 
-    mode = TTS_DOCTOR_PRONUNCIATION_MODE.lower()
+    mode = TTS_DOCTOR_FIX.lower()
 
-    if mode == "maw":
-        # Replace "หมอ" -> "มอ" (shorter, may sound casual)
-        # แทน "หมอ" -> "มอ" (สั้นลง อาจฟังดูไม่เป็นทางการ)
-        text = re.sub(r'คุณหมอ', 'คุณมอ', text)
-        text = re.sub(r'หมอ', 'มอ', text)
+    # Choose zero-width character based on mode
+    # เลือก zero-width character ตามโหมด
+    if mode == "zwnj":
+        zw_char = "\u200C"  # Zero-Width Non-Joiner
+    elif mode == "zwsp":
+        zw_char = "\u200B"  # Zero-Width Space
+    else:
+        return text  # Unknown mode, no change
 
-    elif mode == "zwj":
-        # Replace "หมอ" -> "ห\u200Cมอ" (Zero-Width Non-Joiner to change tokenization)
-        # แทน "หมอ" -> "ห\u200Cมอ" (ใช้ ZWNJ เปลี่ยนการตัดคำ)
-        text = re.sub(r'หมอ', 'ห\u200Cมอ', text)
+    # Regex: match "หมอ" NOT followed by Thai consonants/vowels (ก-๙)
+    # This avoids matching compound words like หมอฟัน, หมอผี, หมอลำ
+    # ไม่แทนคำที่มีตัวอักษรไทยติดท้าย เช่น หมอฟัน, หมอผี, หมอลำ
+    pattern = r'หมอ(?![ก-๙])'
+    replacement = f'ห{zw_char}มอ'
 
-    elif mode == "physician":
-        # Replace "หมอ" -> "แพทย์" (formal, guaranteed correct pronunciation)
-        # แทน "หมอ" -> "แพทย์" (เป็นทางการ รับประกันการออกเสียงถูกต้อง)
-        text = re.sub(r'คุณหมอ', 'คุณแพทย์', text)
-        text = re.sub(r'หมอ', 'แพทย์', text)
+    text = re.sub(pattern, replacement, text)
 
     return text
 
