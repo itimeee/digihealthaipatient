@@ -318,35 +318,7 @@ def synthesize_speech(text: str) -> tuple:
 
         # Return audio content / คืนค่าเนื้อหา audio
         if response.audio_content:
-            audio_bytes = response.audio_content
-            print(f"[DEBUG] TTS successful: {len(audio_bytes)} bytes")
-
-            # Debug: log first 16 bytes as hex to verify format
-            # ดีบัก: แสดง 16 bytes แรกเป็น hex เพื่อตรวจสอบรูปแบบ
-            head = audio_bytes[:16]
-            print(f"[DEBUG] TTS audio header: {head[:8]} hex={head[:8].hex()}")
-
-            # Detect format from header
-            if head[:4] == b"RIFF":
-                print("[DEBUG] TTS format detected: WAV (RIFF header)")
-            elif head[:3] == b"ID3" or (head[0] == 0xFF and (head[1] & 0xE0) == 0xE0):
-                print("[DEBUG] TTS format detected: MP3")
-            elif head[:4] == b"OggS":
-                print("[DEBUG] TTS format detected: OGG")
-            else:
-                print(f"[DEBUG] TTS format unknown, header: {head.hex()}")
-
-            # Temporary: write to file for manual verification (remove after debugging)
-            # ชั่วคราว: เขียนไฟล์เพื่อตรวจสอบด้วยมือ (ลบหลังดีบักเสร็จ)
-            try:
-                debug_path = "/tmp/debug_tts.mp3"
-                with open(debug_path, "wb") as f:
-                    f.write(audio_bytes)
-                print(f"[DEBUG] Wrote debug audio to {debug_path}, size={len(audio_bytes)}")
-            except Exception as e:
-                print(f"[DEBUG] Could not write debug file: {e}")
-
-            return audio_bytes, None
+            return response.audio_content, None
         else:
             return None, ERROR_TTS_FAILED
 

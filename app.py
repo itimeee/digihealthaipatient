@@ -589,6 +589,14 @@ def initialize_session_state():
     if 'tts_audio_by_msg' not in st.session_state:
         st.session_state.tts_audio_by_msg = {}
 
+    # Base64 encoded TTS audio for HTML playback
+    if 'tts_audio_b64_by_msg' not in st.session_state:
+        st.session_state.tts_audio_b64_by_msg = {}
+
+    # One-shot autoplay flag: set when new audio arrives, cleared after render
+    if 'autoplay_tts_msg_idx' not in st.session_state:
+        st.session_state.autoplay_tts_msg_idx = None
+
     if 'last_tts_played_index' not in st.session_state:
         st.session_state.last_tts_played_index = -1
 
@@ -610,8 +618,25 @@ def initialize_session_state():
     if 'last_processed_audio_id' not in st.session_state:
         st.session_state.last_processed_audio_id = None
 
+    # STT retry: track attempted vs successfully processed
+    if 'last_attempted_audio_id' not in st.session_state:
+        st.session_state.last_attempted_audio_id = None
+
+    if 'stt_error_audio_id' not in st.session_state:
+        st.session_state.stt_error_audio_id = None
+
+    if 'stt_error_message' not in st.session_state:
+        st.session_state.stt_error_message = None
+
     if 'last_processed_formulation_key' not in st.session_state:
         st.session_state.last_processed_formulation_key = -1
+
+    # Formulation STT retry
+    if 'last_attempted_formulation_id' not in st.session_state:
+        st.session_state.last_attempted_formulation_id = None
+
+    if 'formulation_stt_error' not in st.session_state:
+        st.session_state.formulation_stt_error = None
 
     if 'voice_send_pending' not in st.session_state:
         st.session_state.voice_send_pending = False
@@ -993,10 +1018,20 @@ def page_chat():
         # Store TTS audio by message index for persistence across reruns
         # เก็บ TTS audio ตาม index ข้อความเพื่อคงอยู่ระหว่าง reruns
         if st.session_state.pending_ai_audio:
+            import base64
             msg_index = len(st.session_state.chat_history) - 1
-            st.session_state.tts_audio_by_msg[msg_index] = st.session_state.pending_ai_audio
-            print(f"[DEBUG] Stored TTS audio for message index {msg_index}, "
-                  f"size={len(st.session_state.pending_ai_audio)} bytes")
+            audio_bytes = st.session_state.pending_ai_audio
+
+            # Store raw bytes
+            st.session_state.tts_audio_by_msg[msg_index] = audio_bytes
+
+            # Store base64 encoded for HTML playback
+            audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+            st.session_state.tts_audio_b64_by_msg[msg_index] = audio_b64
+
+            # Set one-shot autoplay flag
+            st.session_state.autoplay_tts_msg_idx = msg_index
+
             st.session_state.pending_ai_audio = None
 
         # Reset flags BEFORE rerun / รีเซ็ตสถานะก่อนรีรัน
@@ -1036,7 +1071,9 @@ def page_chat():
     if len(st.session_state.chat_history) == 0:
         st.info("👋 Start the conversation by greeting the patient.")
 
-    for message in st.session_state.chat_history:
+    current_mode = st.session_state.get('selected_mode', 'text')
+
+    for idx, message in enumerate(st.session_state.chat_history):
         if message["role"] == "user":
             # Doctor's message (right side) / ข้อความของแพทย์ (ขวา)
             st.markdown(
@@ -1049,14 +1086,36 @@ def page_chat():
             )
         else:
             # AI Patient's message (left side) / ข้อความของผู้ป่วย AI (ซ้าย)
-            st.markdown(
-                f"<div style='text-align: left; background-color: white; padding: 12px 16px; "
-                f"border-radius: 18px 18px 18px 4px; margin: 8px 0; "
-                f"border: 2px solid #e3f2fd; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08); "
-                f"max-width: 80%; color: #37474f;'>"
-                f"<b style='color: #2c5f7d;'>Patient:</b> {message['content']}</div>",
-                unsafe_allow_html=True
-            )
+            # Check if we have TTS audio for this message (voice mode only)
+            has_audio = (current_mode == 'voice' and idx in st.session_state.tts_audio_b64_by_msg)
+
+            if has_audio:
+                # Message with speaker icon for replay
+                audio_b64 = st.session_state.tts_audio_b64_by_msg[idx]
+                st.markdown(
+                    f"<div style='display: flex; align-items: flex-start; gap: 8px; max-width: 85%;'>"
+                    f"<div style='text-align: left; background-color: white; padding: 12px 16px; "
+                    f"border-radius: 18px 18px 18px 4px; margin: 8px 0; "
+                    f"border: 2px solid #e3f2fd; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08); "
+                    f"flex: 1; color: #37474f;'>"
+                    f"<b style='color: #2c5f7d;'>Patient:</b> {message['content']}</div>"
+                    f"<button onclick=\"new Audio('data:audio/mpeg;base64,{audio_b64}').play()\" "
+                    f"style='background: #4a90a4; color: white; border: none; border-radius: 50%; "
+                    f"width: 32px; height: 32px; cursor: pointer; font-size: 14px; margin-top: 12px; "
+                    f"box-shadow: 0 2px 4px rgba(0,0,0,0.2);' title='Replay audio'>🔊</button>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+            else:
+                # Standard message without audio
+                st.markdown(
+                    f"<div style='text-align: left; background-color: white; padding: 12px 16px; "
+                    f"border-radius: 18px 18px 18px 4px; margin: 8px 0; "
+                    f"border: 2px solid #e3f2fd; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08); "
+                    f"max-width: 80%; color: #37474f;'>"
+                    f"<b style='color: #2c5f7d;'>Patient:</b> {message['content']}</div>",
+                    unsafe_allow_html=True
+                )
 
     # ========================================================================
     # LOADING INDICATOR (Stable placeholder) / ตัวบอกสถานะโหลด (ตัวยึดตำแหน่งเสถียร)
@@ -1289,59 +1348,72 @@ def page_chat():
                     disabled=st.session_state.ai_responding
                 )
 
-                # Process recorded audio (only if not already processed)
-                # ประมวลผลเสียงที่บันทึก (เฉพาะเมื่อยังไม่ได้ process)
+                # Process recorded audio (only if not already successfully transcribed)
+                # ประมวลผลเสียงที่บันทึก (เฉพาะเมื่อยังไม่ได้ถอดเสียงสำเร็จ)
                 if audio_data is not None and not st.session_state.ai_responding:
-                    # Read audio bytes - seek to start first in case it was read before
-                    # อ่าน bytes ของเสียง - seek ไปต้นก่อนเผื่อถูกอ่านแล้ว
+                    # Read audio bytes using getvalue() if available, else fallback to seek+read
+                    # อ่าน bytes ของเสียงด้วย getvalue() ถ้ามี ไม่งั้น fallback เป็น seek+read
+                    import hashlib
                     try:
-                        audio_data.seek(0)
-                    except Exception:
-                        pass  # Some file-like objects don't support seek
-                    audio_bytes = audio_data.read()
+                        audio_bytes = audio_data.getvalue()
+                    except AttributeError:
+                        try:
+                            audio_data.seek(0)
+                        except Exception:
+                            pass
+                        audio_bytes = audio_data.read()
 
                     # Create a hash of audio content to detect new recordings
-                    # สร้าง hash ของเนื้อหาเสียงเพื่อตรวจจับการบันทึกใหม่
                     if audio_bytes and len(audio_bytes) > 100:
-                        import hashlib
                         audio_hash = hashlib.md5(audio_bytes[:1000]).hexdigest()[:8]
                         audio_id = f"{current_audio_key}_{audio_hash}"
 
-                        # Debug logging
-                        print(f"[DEBUG] Audio detected: key={current_audio_key}, "
-                              f"hash={audio_hash}, size={len(audio_bytes)}, "
-                              f"last_processed={st.session_state.get('last_processed_audio_id', 'none')}")
-
-                        # Check if this specific audio was already processed
-                        # ตรวจสอบว่า audio นี้ถูก process แล้วหรือยัง
+                        # Check if this audio was already successfully processed
+                        # Only skip if successfully transcribed before (not just attempted)
                         if st.session_state.get('last_processed_audio_id') != audio_id:
-                            # Mark as processed BEFORE transcribing
-                            # ทำเครื่องหมายว่า process แล้ว ก่อนถอดเสียง
-                            st.session_state.last_processed_audio_id = audio_id
-                            st.session_state.last_processed_audio_key = current_audio_key
+                            # Check if we already attempted this audio and it failed
+                            # Allow retry if error occurred
+                            already_attempted = (st.session_state.get('last_attempted_audio_id') == audio_id)
+                            has_error = (st.session_state.get('stt_error_audio_id') == audio_id)
 
-                            print(f"[DEBUG] Processing new audio: {audio_id}")
+                            if not already_attempted or has_error:
+                                # Mark as attempted
+                                st.session_state.last_attempted_audio_id = audio_id
+                                st.session_state.last_processed_audio_key = current_audio_key
 
-                            # Transcribe audio / ถอดเสียง
-                            with st.spinner(STATUS_TRANSCRIBING):
-                                st.session_state.voice_transcribing = True
-                                transcript, error = transcribe_audio(audio_bytes)
-                                st.session_state.voice_transcribing = False
+                                # Clear previous error for this audio
+                                st.session_state.stt_error_audio_id = None
+                                st.session_state.stt_error_message = None
 
-                            if transcript:
-                                print(f"[DEBUG] Transcription success: {transcript[:50]}...")
-                                # Widget key rotation: set pending, bump version, rerun
-                                # การหมุนเวียน key: ตั้ง pending, เพิ่ม version, rerun
-                                st.session_state.voice_text_pending = transcript
-                                st.session_state.voice_widget_version += 1
-                                st.rerun()
-                            elif error:
-                                print(f"[DEBUG] Transcription error: {error}")
-                                st.error(f"❌ {error}")
-                        else:
-                            print(f"[DEBUG] Audio already processed: {audio_id}")
+                                # Transcribe audio / ถอดเสียง
+                                with st.spinner(STATUS_TRANSCRIBING):
+                                    st.session_state.voice_transcribing = True
+                                    transcript, error = transcribe_audio(audio_bytes)
+                                    st.session_state.voice_transcribing = False
+
+                                if transcript:
+                                    # Mark as successfully processed
+                                    st.session_state.last_processed_audio_id = audio_id
+                                    # Widget key rotation: set pending, bump version, rerun
+                                    st.session_state.voice_text_pending = transcript
+                                    st.session_state.voice_widget_version += 1
+                                    st.rerun()
+                                elif error:
+                                    # Store error for retry UI
+                                    st.session_state.stt_error_audio_id = audio_id
+                                    st.session_state.stt_error_message = error
 
             with voice_col2:
+                # Show STT error with retry button if applicable
+                if st.session_state.stt_error_message:
+                    st.error(f"❌ {st.session_state.stt_error_message}")
+                    if st.button("🔄 Retry STT", key="retry_stt_btn"):
+                        # Clear the error to allow retry
+                        st.session_state.stt_error_audio_id = None
+                        st.session_state.stt_error_message = None
+                        st.session_state.last_attempted_audio_id = None
+                        st.rerun()
+
                 # Editable text area for transcribed text (using dynamic key for rotation)
                 # ช่อง text area สำหรับแก้ไขข้อความที่ถอดเสียง (ใช้ key แบบ dynamic)
                 st.text_area(
@@ -1357,10 +1429,6 @@ def page_chat():
 
                 # Get current text from value key for button logic
                 current_text = st.session_state.voice_text_value.strip()
-
-                # Debug caption (temporary - remove after verification)
-                st.caption(f"DEBUG voice: version={st.session_state.voice_widget_version}, "
-                          f"key={voice_widget_key}, value_len={len(st.session_state.voice_text_value)}")
 
                 # Send button / ปุ่มส่ง
                 send_col1, send_col2 = st.columns([1, 1])
@@ -1412,35 +1480,20 @@ def page_chat():
                         st.session_state.last_processed_audio_id = None
                         st.rerun()
 
-            # Show TTS audio for the latest patient response / แสดง audio TTS สำหรับคำตอบล่าสุด
-            # Look for the most recent assistant message and check if we have audio for it
-            # ค้นหาข้อความล่าสุดของ assistant และตรวจสอบว่ามี audio หรือไม่
-            if st.session_state.tts_audio_by_msg:
-                # Find the latest assistant message index
-                latest_assistant_idx = None
-                for i in range(len(st.session_state.chat_history) - 1, -1, -1):
-                    if st.session_state.chat_history[i].get("role") == "assistant":
-                        latest_assistant_idx = i
-                        break
-
-                # If we have audio for this message and haven't played it yet
-                if (latest_assistant_idx is not None and
-                    latest_assistant_idx in st.session_state.tts_audio_by_msg and
-                    latest_assistant_idx > st.session_state.last_tts_played_index):
-
-                    audio_bytes = st.session_state.tts_audio_by_msg[latest_assistant_idx]
-                    st.markdown("##### 🔊 Patient Response Audio")
-
-                    # Debug: show audio info
-                    st.caption(f"DEBUG: Audio size={len(audio_bytes)} bytes, msg_idx={latest_assistant_idx}, "
-                              f"header={audio_bytes[:4].hex()}")
-
-                    # Wrap bytes in BytesIO for better browser compatibility
-                    # ห่อ bytes ใน BytesIO เพื่อความเข้ากันได้กับ browser
-                    import io
-                    audio_io = io.BytesIO(audio_bytes)
-                    st.audio(audio_io, format="audio/mpeg", autoplay=True)
-                    st.session_state.last_tts_played_index = latest_assistant_idx
+            # One-shot TTS autoplay via hidden audio element
+            # เล่น TTS อัตโนมัติครั้งเดียวผ่าน hidden audio element
+            if st.session_state.autoplay_tts_msg_idx is not None:
+                msg_idx = st.session_state.autoplay_tts_msg_idx
+                if msg_idx in st.session_state.tts_audio_b64_by_msg:
+                    audio_b64 = st.session_state.tts_audio_b64_by_msg[msg_idx]
+                    # Render hidden autoplay audio via components.html
+                    # This plays once and doesn't show any UI
+                    components.html(
+                        f'<audio autoplay style="display:none"><source src="data:audio/mpeg;base64,{audio_b64}" type="audio/mpeg"></audio>',
+                        height=0
+                    )
+                # Clear the flag immediately after rendering to prevent replay on rerun
+                st.session_state.autoplay_tts_msg_idx = None
 
         else:
             # ================================================================
@@ -1636,6 +1689,37 @@ def page_end():
     End page - display session results, feedback form, and AI feedback.
     หน้าจบการฝึกซ้อม - แสดงผล, ฟอร์มตอบคำถาม, และ AI feedback
     """
+    # Inject CSS for styled expander headers
+    # ใส่ CSS สำหรับ expander headers ที่ดูเป็นปุ่มกดได้
+    st.markdown("""
+        <style>
+        /* Make expander headers look clickable */
+        div[data-testid="stExpander"] details summary {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-weight: 600;
+            color: #2c5f7d;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        div[data-testid="stExpander"] details summary:hover {
+            background: linear-gradient(135deg, #e9ecef 0%, #dee2e6 100%);
+            border-color: #4a90a4;
+            box-shadow: 0 2px 8px rgba(74, 144, 164, 0.2);
+        }
+        div[data-testid="stExpander"] details[open] summary {
+            background: linear-gradient(135deg, #4a90a4 0%, #5ba3b8 100%);
+            color: white;
+            border-color: #4a90a4;
+        }
+        div[data-testid="stExpander"] details {
+            border: none;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     st.title("Session Complete / เสร็จสิ้นการฝึกซ้อม")
 
     # Show summary / แสดงสรุป
@@ -1746,65 +1830,165 @@ def page_end():
                 st.rerun()
 
     else:
-        # Show the form / แสดงฟอร์ม
+        # Show the form (refactored without st.form for audio_input compatibility)
+        # แสดงฟอร์ม (ปรับโครงสร้างโดยไม่ใช้ st.form เพื่อให้ audio_input ทำงานได้)
         st.markdown("""
         กรุณาตอบคำถามด้านล่างเพื่อรับ feedback จาก AI:
 
         Please answer the questions below to receive AI feedback:
         """)
 
+        # Build dynamic widget key for formulation textbox (key rotation pattern)
+        formulation_widget_key = f"formulation_text_widget_{st.session_state.formulation_widget_version}"
+
+        # Handle pending text BEFORE widget is rendered
+        if st.session_state.formulation_text_pending is not None:
+            st.session_state[formulation_widget_key] = st.session_state.formulation_text_pending
+            st.session_state.formulation_text_value = st.session_state.formulation_text_pending
+            st.session_state.formulation_text = st.session_state.formulation_text_pending
+            st.session_state.formulation_text_pending = None
+
+        # Handle pending clear
+        if st.session_state.formulation_clear_pending:
+            st.session_state[formulation_widget_key] = ""
+            st.session_state.formulation_text_value = ""
+            st.session_state.formulation_text = ""
+            st.session_state.formulation_clear_pending = False
+
+        # 1. Provisional Diagnosis
+        st.markdown("#### 1️⃣ Provisional Diagnosis")
+        provisional_dx = st.text_area(
+            "ระบุการวินิจฉัยเบื้องต้นของคุณ / Enter your provisional diagnosis:",
+            value=st.session_state.provisional_dx,
+            height=100,
+            placeholder="เช่น Major Depressive Disorder, single episode, moderate severity",
+            key="form_provisional_dx"
+        )
+        st.session_state.provisional_dx = provisional_dx
+
+        st.markdown("---")
+
+        # 2. Differential Diagnosis (3 items)
+        st.markdown("#### 2️⃣ Differential Diagnosis (3 ข้อ)")
+
+        ddx1 = st.text_area(
+            "DDx 1:",
+            value=st.session_state.ddx1,
+            height=60,
+            placeholder="เช่น Adjustment Disorder with Depressed Mood",
+            key="form_ddx1"
+        )
+        st.session_state.ddx1 = ddx1
+
+        ddx2 = st.text_area(
+            "DDx 2:",
+            value=st.session_state.ddx2,
+            height=60,
+            placeholder="เช่น Bipolar II Disorder",
+            key="form_ddx2"
+        )
+        st.session_state.ddx2 = ddx2
+
+        ddx3 = st.text_area(
+            "DDx 3:",
+            value=st.session_state.ddx3,
+            height=60,
+            placeholder="เช่น Persistent Depressive Disorder (Dysthymia)",
+            key="form_ddx3"
+        )
+        st.session_state.ddx3 = ddx3
+
+        st.markdown("---")
+
+        # 3. Psychodynamic Formulation
+        st.markdown("#### 3️⃣ Psychodynamic Formulation")
+
+        formulation_framework = st.selectbox(
+            "เลือกทฤษฎี / Select Theory:",
+            options=PSYCHODYNAMIC_FRAMEWORKS,
+            index=PSYCHODYNAMIC_FRAMEWORKS.index(st.session_state.formulation_framework)
+                  if st.session_state.formulation_framework in PSYCHODYNAMIC_FRAMEWORKS else 0,
+            key="form_framework"
+        )
+        st.session_state.formulation_framework = formulation_framework
+
+        # Dynamic placeholder based on framework
+        framework_placeholders = {
+            "4P (Predisposing, Precipitating, Perpetuating, Protective)":
+                "Predisposing: ...\nPrecipitating: ...\nPerpetuat...\nProtective: ...",
+            "Psychosexual Development (Freud)":
+                "ระบุ stage ที่มี fixation และอธิบายความสัมพันธ์กับอาการปัจจุบัน...",
+            "Ego Psychology":
+                "อธิบาย ego functions, defense mechanisms, และ conflict...",
+            "Self Psychology (Kohut)":
+                "อธิบาย self-object needs, narcissistic injury, และ mirroring...",
+            "Object Relations Theory":
+                "อธิบาย internal objects, splitting, และ projective identification...",
+            "Attachment Theory":
+                "อธิบาย attachment style, early attachment experiences, และ current relationships..."
+        }
+
+        placeholder = framework_placeholders.get(formulation_framework, "อธิบาย formulation ตาม framework ที่เลือก...")
+
+        # Formulation textbox (using key rotation for dictation support)
+        formulation_text = st.text_area(
+            f"Formulation ตาม {formulation_framework.split('(')[0].strip()}:",
+            height=200,
+            placeholder=placeholder,
+            key=formulation_widget_key
+        )
+        # Sync widget -> session state
+        st.session_state.formulation_text_value = st.session_state.get(formulation_widget_key, "")
+        st.session_state.formulation_text = st.session_state.formulation_text_value
+
         # ================================================================
-        # VOICE DICTATION FOR FORMULATION / การป้อนข้อมูลด้วยเสียงสำหรับ formulation
+        # COMPACT VOICE DICTATION FOR FORMULATION (below formulation textbox)
         # ================================================================
-        # This section is OUTSIDE the form to allow audio_input to work
-        # ส่วนนี้อยู่นอก form เพื่อให้ audio_input ทำงานได้
+        st.markdown("##### 🎤 Dictate / พูดเพิ่ม")
+        mic_col1, mic_col2, mic_col3 = st.columns([2, 1, 1])
 
-        with st.expander("🎤 Dictate Formulation (Voice) / พูด Formulation", expanded=False):
-            st.markdown("Use the microphone to dictate your psychodynamic formulation. "
-                       "The transcribed text will be used in the form below.")
-            st.markdown("ใช้ไมโครโฟนเพื่อพูด psychodynamic formulation ข้อความที่ถอดเสียงจะถูกใช้ในฟอร์มด้านล่าง")
+        with mic_col1:
+            current_formulation_key = st.session_state.formulation_mic_key
+            formulation_audio = st.audio_input(
+                "Record",
+                key=f"formulation_mic_{current_formulation_key}",
+                label_visibility="collapsed"
+            )
 
-            # Build dynamic widget key using version for key rotation
-            # สร้าง widget key แบบ dynamic โดยใช้ version สำหรับการหมุนเวียน key
-            formulation_widget_key = f"formulation_text_widget_{st.session_state.formulation_widget_version}"
+            # Process recorded audio
+            if formulation_audio is not None:
+                import hashlib
+                try:
+                    audio_bytes = formulation_audio.getvalue()
+                except AttributeError:
+                    try:
+                        formulation_audio.seek(0)
+                    except Exception:
+                        pass
+                    audio_bytes = formulation_audio.read()
 
-            # Handle pending text BEFORE widget is rendered (key rotation pattern)
-            if st.session_state.formulation_text_pending is not None:
-                st.session_state[formulation_widget_key] = st.session_state.formulation_text_pending
-                st.session_state.formulation_text_value = st.session_state.formulation_text_pending
-                st.session_state.formulation_text = st.session_state.formulation_text_pending
-                st.session_state.formulation_text_pending = None
+                if audio_bytes and len(audio_bytes) > 100:
+                    audio_hash = hashlib.md5(audio_bytes[:1000]).hexdigest()[:8]
+                    formulation_audio_id = f"{current_formulation_key}_{audio_hash}"
 
-            # Handle pending clear BEFORE widget is rendered
-            if st.session_state.formulation_clear_pending:
-                st.session_state[formulation_widget_key] = ""
-                st.session_state.formulation_text_value = ""
-                st.session_state.formulation_text = ""
-                st.session_state.formulation_clear_pending = False
+                    # Check if already processed successfully
+                    if st.session_state.get('last_processed_formulation_id') != formulation_audio_id:
+                        # Check if already attempted
+                        already_attempted = (st.session_state.get('last_attempted_formulation_id') == formulation_audio_id)
+                        has_error = (st.session_state.get('formulation_stt_error') is not None and
+                                    st.session_state.get('formulation_stt_error_id') == formulation_audio_id)
 
-            formulation_mic_col1, formulation_mic_col2 = st.columns([1, 2])
-
-            with formulation_mic_col1:
-                current_formulation_key = st.session_state.formulation_mic_key
-                formulation_audio = st.audio_input(
-                    "🎤 Record formulation",
-                    key=f"formulation_mic_{current_formulation_key}"
-                )
-
-                # Only process if not already processed
-                if formulation_audio is not None:
-                    if st.session_state.last_processed_formulation_key != current_formulation_key:
-                        audio_bytes = formulation_audio.read()
-                        if audio_bytes and len(audio_bytes) > 100:
-                            # Mark as processed BEFORE transcribing
-                            st.session_state.last_processed_formulation_key = current_formulation_key
+                        if not already_attempted or has_error:
+                            st.session_state.last_attempted_formulation_id = formulation_audio_id
+                            st.session_state.formulation_stt_error = None
 
                             with st.spinner(STATUS_TRANSCRIBING):
                                 transcript, error = transcribe_audio(audio_bytes)
 
                             if transcript:
-                                # Widget key rotation: set pending, bump version, rerun
-                                # Append to existing text or replace
+                                # Mark as successfully processed
+                                st.session_state.last_processed_formulation_id = formulation_audio_id
+                                # Append to existing text
                                 if st.session_state.formulation_text_value:
                                     new_text = st.session_state.formulation_text_value + "\n" + transcript
                                 else:
@@ -1813,115 +1997,40 @@ def page_end():
                                 st.session_state.formulation_widget_version += 1
                                 st.rerun()
                             elif error:
-                                st.error(f"❌ {error}")
+                                st.session_state.formulation_stt_error = error
+                                st.session_state.formulation_stt_error_id = formulation_audio_id
 
-            with formulation_mic_col2:
-                st.markdown("**Current formulation text:**")
-                st.text_area(
-                    "Preview (editable)",
-                    height=100,
-                    placeholder="บันทึกเสียงหรือพิมพ์ข้อความที่นี่...",
-                    key=formulation_widget_key
-                )
-                # Sync widget -> value
-                st.session_state.formulation_text_value = st.session_state.get(formulation_widget_key, "")
-                # Also sync to legacy key for form compatibility
-                st.session_state.formulation_text = st.session_state.formulation_text_value
-
-                # Debug caption (temporary - remove after verification)
-                st.caption(f"DEBUG formulation: version={st.session_state.formulation_widget_version}")
-
-                if st.button("🗑️ Clear formulation text", key="clear_formulation"):
-                    # Rotate widget key to clear textbox on next render
-                    st.session_state.formulation_text_pending = ""
-                    st.session_state.formulation_widget_version += 1
-                    st.session_state.formulation_mic_key += 1
-                    st.session_state.last_processed_formulation_key = -1
+        with mic_col2:
+            if st.session_state.get('formulation_stt_error'):
+                if st.button("🔄 Retry", key="retry_formulation_stt"):
+                    st.session_state.formulation_stt_error = None
+                    st.session_state.last_attempted_formulation_id = None
                     st.rerun()
 
-        with st.form("post_case_form"):
-            # 1. Provisional Diagnosis
-            st.markdown("#### 1️⃣ Provisional Diagnosis")
-            provisional_dx = st.text_area(
-                "ระบุการวินิจฉัยเบื้องต้นของคุณ / Enter your provisional diagnosis:",
-                value=st.session_state.provisional_dx,
-                height=100,
-                placeholder="เช่น Major Depressive Disorder, single episode, moderate severity"
-            )
+        with mic_col3:
+            if st.button("🗑️ Clear", key="clear_formulation"):
+                st.session_state.formulation_text_pending = ""
+                st.session_state.formulation_widget_version += 1
+                st.session_state.formulation_mic_key += 1
+                st.session_state.last_processed_formulation_id = None
+                st.session_state.last_attempted_formulation_id = None
+                st.rerun()
 
-            st.markdown("---")
+        # Show STT error if any
+        if st.session_state.get('formulation_stt_error'):
+            st.error(f"❌ {st.session_state.formulation_stt_error}")
 
-            # 2. Differential Diagnosis (3 items)
-            st.markdown("#### 2️⃣ Differential Diagnosis (3 ข้อ)")
+        st.markdown("---")
 
-            ddx1 = st.text_area(
-                "DDx 1:",
-                value=st.session_state.ddx1,
-                height=60,
-                placeholder="เช่น Adjustment Disorder with Depressed Mood"
-            )
+        # Submit button (outside st.form, using regular button)
+        submitted = st.button(
+            "📤 Submit & Get Feedback",
+            use_container_width=True,
+            type="primary",
+            key="submit_feedback_btn"
+        )
 
-            ddx2 = st.text_area(
-                "DDx 2:",
-                value=st.session_state.ddx2,
-                height=60,
-                placeholder="เช่น Bipolar II Disorder"
-            )
-
-            ddx3 = st.text_area(
-                "DDx 3:",
-                value=st.session_state.ddx3,
-                height=60,
-                placeholder="เช่น Persistent Depressive Disorder (Dysthymia)"
-            )
-
-            st.markdown("---")
-
-            # 3. Psychodynamic Formulation
-            st.markdown("#### 3️⃣ Psychodynamic Formulation")
-
-            formulation_framework = st.selectbox(
-                "เลือกทฤษฎี / Select Theory:",
-                options=PSYCHODYNAMIC_FRAMEWORKS,
-                index=PSYCHODYNAMIC_FRAMEWORKS.index(st.session_state.formulation_framework)
-                      if st.session_state.formulation_framework in PSYCHODYNAMIC_FRAMEWORKS else 0
-            )
-
-            # Dynamic placeholder based on framework / placeholder แบบ dynamic ตาม framework
-            framework_placeholders = {
-                "4P (Predisposing, Precipitating, Perpetuating, Protective)":
-                    "Predisposing: ...\nPrecipitating: ...\nPerpetuat...\nProtective: ...",
-                "Psychosexual Development (Freud)":
-                    "ระบุ stage ที่มี fixation และอธิบายความสัมพันธ์กับอาการปัจจุบัน...",
-                "Ego Psychology":
-                    "อธิบาย ego functions, defense mechanisms, และ conflict...",
-                "Self Psychology (Kohut)":
-                    "อธิบาย self-object needs, narcissistic injury, และ mirroring...",
-                "Object Relations Theory":
-                    "อธิบาย internal objects, splitting, และ projective identification...",
-                "Attachment Theory":
-                    "อธิบาย attachment style, early attachment experiences, และ current relationships..."
-            }
-
-            placeholder = framework_placeholders.get(formulation_framework, "อธิบาย formulation ตาม framework ที่เลือก...")
-
-            formulation_text = st.text_area(
-                f"Formulation ตาม {formulation_framework.split('(')[0].strip()}:",
-                value=st.session_state.formulation_text,
-                height=200,
-                placeholder=placeholder
-            )
-
-            st.markdown("---")
-
-            # Submit button
-            submitted = st.form_submit_button(
-                "📤 Submit & Get Feedback",
-                use_container_width=True,
-                type="primary"
-            )
-
-            if submitted:
+        if submitted:
                 # Validate required fields / ตรวจสอบฟิลด์ที่จำเป็น
                 if not provisional_dx.strip():
                     st.error("⚠️ กรุณาระบุ Provisional Diagnosis")
