@@ -3,6 +3,7 @@ DigiHealth AI Patient - Psychiatric Training Application
 แอปพลิเคชันฝึกซ้อมการซักประวัติผู้ป่วยทางจิตเวช
 """
 
+import html
 import streamlit as st
 import streamlit.components.v1 as components
 import gspread
@@ -20,9 +21,6 @@ from cases import ALL_CASES, get_case_by_name
 from genai_client import (
     get_client,
     generate_content_sync,
-    extract_text,
-    is_response_blocked,
-    build_generation_config,
 )
 from model_config import (
     DEFAULT_CASE_MODEL,
@@ -51,16 +49,29 @@ from feedback_logger import (
 
 # Import voice modules / นำเข้าโมดูลเสียง
 from voice_config import (
-    VOICE_MINIMAL_UI,
     STATUS_TRANSCRIBING,
     STATUS_GENERATING_TTS,
     TTS_AUTO_PLAY,
-    VOICE_SAMPLE_RATE,
+    VOICE_MINIMAL_UI,
+    get_tts_auto_play,
+    get_voice_minimal_ui,
 )
 from voice_service import (
     transcribe_audio,
     synthesize_speech,
     is_voice_service_available,
+)
+
+# ============================================================================
+# PAGE CONFIGURATION (Must be first Streamlit command)
+# การตั้งค่าหน้าเว็บ (ต้องเป็นคำสั่ง Streamlit แรก)
+# ============================================================================
+
+st.set_page_config(
+    page_title="DigiHealth AI Patient",
+    page_icon="🏥",
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
 # ============================================================================
@@ -73,10 +84,130 @@ TIMER_DURATION_MINUTES = 30
 
 # Google Sheet ID for logging session data / ID ของ Google Sheet สำหรับบันทึกข้อมูล
 # Get sheet ID from the URL: https://docs.google.com/spreadsheets/d/[SHEET_ID]/edit
-GOOGLE_SHEET_ID = "1motfqsOspQrVkWDtRqUxgfH_-3nDuqYGw9eXwEfQWoo"
+# Can be overridden via st.secrets["logging"]["sheet_id"]
+_DEFAULT_GOOGLE_SHEET_ID = "1motfqsOspQrVkWDtRqUxgfH_-3nDuqYGw9eXwEfQWoo"
 
 # Google Sheet ID for latest session data (overwrites each time) / ID ของ Google Sheet สำหรับข้อมูลเซสชันล่าสุด
-GOOGLE_SHEET_LATEST_ID = "1y7mhBgABMNDzRFPDmQa7kQqTE6q4h_Py02IvT2OmUM8"
+# Can be overridden via st.secrets["logging"]["sheet_latest_id"]
+_DEFAULT_GOOGLE_SHEET_LATEST_ID = "1y7mhBgABMNDzRFPDmQa7kQqTE6q4h_Py02IvT2OmUM8"
+
+
+def get_sheet_id() -> str:
+    """
+    Get Google Sheet ID from secrets or use default.
+    ดึง Google Sheet ID จาก secrets หรือใช้ค่าเริ่มต้น
+    """
+    try:
+        logging_config = st.secrets.get("logging", {})
+        return logging_config.get("sheet_id", _DEFAULT_GOOGLE_SHEET_ID)
+    except Exception:
+        return _DEFAULT_GOOGLE_SHEET_ID
+
+
+def get_sheet_latest_id() -> str:
+    """
+    Get Google Sheet Latest ID from secrets or use default.
+    ดึง Google Sheet Latest ID จาก secrets หรือใช้ค่าเริ่มต้น
+    """
+    try:
+        logging_config = st.secrets.get("logging", {})
+        return logging_config.get("sheet_latest_id", _DEFAULT_GOOGLE_SHEET_LATEST_ID)
+    except Exception:
+        return _DEFAULT_GOOGLE_SHEET_LATEST_ID
+
+
+# ============================================================================
+# HTML ESCAPING HELPERS / ฟังก์ชันช่วย escape HTML
+# ============================================================================
+
+def escape_html(text: str) -> str:
+    """
+    Escape HTML characters to prevent injection.
+    แปลง HTML characters เพื่อป้องกัน injection
+
+    Args:
+        text: Raw text that may contain HTML
+
+    Returns:
+        Escaped text safe for HTML rendering
+    """
+    if not text:
+        return ""
+    return html.escape(str(text))
+
+
+def render_doctor_bubble(content: str) -> str:
+    """
+    Render doctor's chat bubble HTML with escaped content.
+    สร้าง HTML สำหรับ chat bubble ของแพทย์พร้อม escape content
+
+    Args:
+        content: Message content (will be escaped)
+
+    Returns:
+        HTML string for doctor's message bubble
+    """
+    safe_content = escape_html(content)
+    return (
+        f"<div style='text-align: right; background: linear-gradient(135deg, #4a90a4 0%, #5ba3b8 100%); "
+        f"color: white; padding: 12px 16px; border-radius: 18px 18px 4px 18px; "
+        f"margin: 8px 0; box-shadow: 0 2px 4px rgba(74, 144, 164, 0.2); max-width: 80%; "
+        f"margin-left: auto;'>"
+        f"<b style='color: #e3f2fd;'>You:</b> {safe_content}</div>"
+    )
+
+
+def render_patient_bubble(content: str) -> str:
+    """
+    Render patient's chat bubble HTML with escaped content.
+    สร้าง HTML สำหรับ chat bubble ของผู้ป่วยพร้อม escape content
+
+    Args:
+        content: Message content (will be escaped)
+
+    Returns:
+        HTML string for patient's message bubble
+    """
+    safe_content = escape_html(content)
+    return (
+        f"<div style='text-align: left; background-color: white; padding: 12px 16px; "
+        f"border-radius: 18px 18px 18px 4px; margin: 8px 0; "
+        f"border: 2px solid #e3f2fd; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08); "
+        f"max-width: 80%; color: #37474f;'>"
+        f"<b style='color: #2c5f7d;'>Patient:</b> {safe_content}</div>"
+    )
+
+
+def render_patient_bubble_with_audio(content: str, audio_b64: str, iframe_height: int) -> str:
+    """
+    Render patient's chat bubble with audio replay button using components.html.
+    สร้าง HTML สำหรับ chat bubble ของผู้ป่วยพร้อมปุ่มเล่นเสียง
+
+    Args:
+        content: Message content (will be escaped)
+        audio_b64: Base64 encoded audio data
+        iframe_height: Height for iframe component
+
+    Returns:
+        HTML string for patient's message bubble with audio
+    """
+    safe_content = escape_html(content)
+    return f"""
+    <div style='display: flex; align-items: flex-start; gap: 6px; font-family: "Source Sans Pro", sans-serif;'>
+        <div style='text-align: left; background-color: white; padding: 10px 14px;
+            border-radius: 18px 18px 18px 4px;
+            border: 2px solid #e3f2fd; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+            flex: 1; color: #37474f; font-size: 14px; line-height: 1.4; max-width: calc(100% - 40px);'>
+            <b style='color: #2c5f7d;'>Patient:</b> {safe_content}
+        </div>
+        <button onclick="new Audio('data:audio/mpeg;base64,{audio_b64}').play()"
+            style='background: #4a90a4; color: white; border: none; border-radius: 50%;
+            width: 28px; height: 28px; cursor: pointer; font-size: 12px; margin-top: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2); flex-shrink: 0;'
+            title='Replay audio'>🔊</button>
+    </div>
+    """
+
 
 # ============================================================================
 # GOOGLE SHEETS SETUP / ตั้งค่า Google Sheets
@@ -131,7 +262,7 @@ def save_session_to_sheet(user_name, user_email, chat_history, case_name=None, m
         gc = gspread.authorize(credentials)
 
         # Open the existing spreadsheet / เปิดสเปรดชีทที่มีอยู่
-        spreadsheet = gc.open_by_key(GOOGLE_SHEET_ID)
+        spreadsheet = gc.open_by_key(get_sheet_id())
         worksheet = spreadsheet.sheet1
 
         # Get current timestamp / รับเวลาปัจจุบัน
@@ -145,15 +276,19 @@ def save_session_to_sheet(user_name, user_email, chat_history, case_name=None, m
         # Define expected headers including Mode / กำหนด headers ที่คาดหวังรวม Mode
         expected_headers = ["Session ID", "Timestamp", "User Name", "User Email", "Case Name", "Mode", "Speaker", "Message"]
 
-        # Check and update headers if needed / ตรวจสอบและอัพเดท headers ถ้าจำเป็น
-        existing_data = worksheet.get_all_values()
-        if not existing_data or existing_data[0][0] != "Session ID":
+        # Check and update headers if needed (optimized: only read row 1)
+        # ตรวจสอบและอัพเดท headers ถ้าจำเป็น (ปรับปรุง: อ่านแค่แถว 1)
+        try:
+            current_headers = worksheet.row_values(1)
+        except Exception:
+            current_headers = []
+
+        if not current_headers or (current_headers and current_headers[0] != "Session ID"):
             # Add headers if sheet is empty / เพิ่ม header ถ้าชีทว่าง
             worksheet.insert_row(expected_headers, 1)
-        elif "Mode" not in existing_data[0]:
+        elif "Mode" not in current_headers:
             # Update header row to include Mode / อัพเดท header row ให้มี Mode
             # Insert Mode column after Case Name (position 5, 0-indexed)
-            current_headers = existing_data[0]
             if len(current_headers) >= 5:
                 # Find position after "Case Name"
                 try:
@@ -225,7 +360,7 @@ def save_latest_session(user_name, user_email, chat_history, case_name=None, mod
         gc = gspread.authorize(credentials)
 
         # Open the latest session spreadsheet / เปิดสเปรดชีทเซสชันล่าสุด
-        spreadsheet = gc.open_by_key(GOOGLE_SHEET_LATEST_ID)
+        spreadsheet = gc.open_by_key(get_sheet_latest_id())
         worksheet = spreadsheet.sheet1
 
         # Clear all existing data / ลบข้อมูลเก่าทั้งหมด
@@ -288,7 +423,7 @@ def get_latest_session_data():
         gc = gspread.authorize(credentials)
 
         # Open the latest session spreadsheet / เปิดสเปรดชีทเซสชันล่าสุด
-        spreadsheet = gc.open_by_key(GOOGLE_SHEET_LATEST_ID)
+        spreadsheet = gc.open_by_key(get_sheet_latest_id())
         worksheet = spreadsheet.sheet1
 
         # Get all data / ดึงข้อมูลทั้งหมด
@@ -575,19 +710,11 @@ def initialize_session_state():
         st.session_state.feedback_session_id = None
 
     # Voice mode session state / สถานะ session สำหรับ voice mode
-    if 'voice_draft_text' not in st.session_state:
-        st.session_state.voice_draft_text = ''
-
     if 'voice_input_key' not in st.session_state:
         st.session_state.voice_input_key = 0
 
     if 'pending_ai_audio' not in st.session_state:
         st.session_state.pending_ai_audio = None
-
-    # Dictionary to store TTS audio by message index for persistence across reruns
-    # Dictionary เก็บ TTS audio ตาม index ของข้อความเพื่อคงอยู่ระหว่าง reruns
-    if 'tts_audio_by_msg' not in st.session_state:
-        st.session_state.tts_audio_by_msg = {}
 
     # Base64 encoded TTS audio for HTML playback
     if 'tts_audio_b64_by_msg' not in st.session_state:
@@ -597,17 +724,11 @@ def initialize_session_state():
     if 'autoplay_tts_msg_idx' not in st.session_state:
         st.session_state.autoplay_tts_msg_idx = None
 
-    if 'last_tts_played_index' not in st.session_state:
-        st.session_state.last_tts_played_index = -1
-
     if 'voice_transcribing' not in st.session_state:
         st.session_state.voice_transcribing = False
 
     if 'voice_generating_tts' not in st.session_state:
         st.session_state.voice_generating_tts = False
-
-    if 'formulation_draft_text' not in st.session_state:
-        st.session_state.formulation_draft_text = ''
 
     if 'formulation_mic_key' not in st.session_state:
         st.session_state.formulation_mic_key = 0
@@ -627,9 +748,6 @@ def initialize_session_state():
 
     if 'stt_error_message' not in st.session_state:
         st.session_state.stt_error_message = None
-
-    if 'last_processed_formulation_key' not in st.session_state:
-        st.session_state.last_processed_formulation_key = -1
 
     # Formulation STT retry
     if 'last_attempted_formulation_id' not in st.session_state:
@@ -1020,13 +1138,9 @@ def page_chat():
         if st.session_state.pending_ai_audio:
             import base64
             msg_index = len(st.session_state.chat_history) - 1
-            audio_bytes = st.session_state.pending_ai_audio
-
-            # Store raw bytes
-            st.session_state.tts_audio_by_msg[msg_index] = audio_bytes
 
             # Store base64 encoded for HTML playback
-            audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+            audio_b64 = base64.b64encode(st.session_state.pending_ai_audio).decode('utf-8')
             st.session_state.tts_audio_b64_by_msg[msg_index] = audio_b64
 
             # Set one-shot autoplay flag
@@ -1075,15 +1189,8 @@ def page_chat():
 
     for idx, message in enumerate(st.session_state.chat_history):
         if message["role"] == "user":
-            # Doctor's message (right side) / ข้อความของแพทย์ (ขวา)
-            st.markdown(
-                f"<div style='text-align: right; background: linear-gradient(135deg, #4a90a4 0%, #5ba3b8 100%); "
-                f"color: white; padding: 12px 16px; border-radius: 18px 18px 4px 18px; "
-                f"margin: 8px 0; box-shadow: 0 2px 4px rgba(74, 144, 164, 0.2); max-width: 80%; "
-                f"margin-left: auto;'>"
-                f"<b style='color: #e3f2fd;'>You:</b> {message['content']}</div>",
-                unsafe_allow_html=True
-            )
+            # Doctor's message (right side) with HTML escaping / ข้อความของแพทย์ (ขวา) พร้อม escape HTML
+            st.markdown(render_doctor_bubble(message['content']), unsafe_allow_html=True)
         else:
             # AI Patient's message (left side) / ข้อความของผู้ป่วย AI (ซ้าย)
             # Check if we have TTS audio for this message (voice mode only)
@@ -1097,34 +1204,14 @@ def page_chat():
                 estimated_lines = max(1, len(msg_content) // 100 + 1)
                 iframe_height = min(50 + estimated_lines * 18, 250)
 
+                # Use helper with HTML escaping
                 components.html(
-                    f"""
-                    <div style='display: flex; align-items: flex-start; gap: 6px; font-family: "Source Sans Pro", sans-serif;'>
-                        <div style='text-align: left; background-color: white; padding: 10px 14px;
-                            border-radius: 18px 18px 18px 4px;
-                            border: 2px solid #e3f2fd; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
-                            flex: 1; color: #37474f; font-size: 14px; line-height: 1.4; max-width: calc(100% - 40px);'>
-                            <b style='color: #2c5f7d;'>Patient:</b> {msg_content}
-                        </div>
-                        <button onclick="new Audio('data:audio/mpeg;base64,{audio_b64}').play()"
-                            style='background: #4a90a4; color: white; border: none; border-radius: 50%;
-                            width: 28px; height: 28px; cursor: pointer; font-size: 12px; margin-top: 4px;
-                            box-shadow: 0 2px 4px rgba(0,0,0,0.2); flex-shrink: 0;'
-                            title='Replay audio'>🔊</button>
-                    </div>
-                    """,
+                    render_patient_bubble_with_audio(msg_content, audio_b64, iframe_height),
                     height=iframe_height
                 )
             else:
-                # Standard message without audio
-                st.markdown(
-                    f"<div style='text-align: left; background-color: white; padding: 12px 16px; "
-                    f"border-radius: 18px 18px 18px 4px; margin: 8px 0; "
-                    f"border: 2px solid #e3f2fd; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08); "
-                    f"max-width: 80%; color: #37474f;'>"
-                    f"<b style='color: #2c5f7d;'>Patient:</b> {message['content']}</div>",
-                    unsafe_allow_html=True
-                )
+                # Standard message without audio (with HTML escaping)
+                st.markdown(render_patient_bubble(message['content']), unsafe_allow_html=True)
 
     # ========================================================================
     # LOADING INDICATOR (Stable placeholder) / ตัวบอกสถานะโหลด (ตัวยึดตำแหน่งเสถียร)
@@ -1317,7 +1404,7 @@ def page_chat():
                     st.session_state.pending_ai_response = response
 
                     # Generate TTS for voice mode
-                    if response and TTS_AUTO_PLAY:
+                    if response and get_tts_auto_play():
                         st.session_state.voice_generating_tts = True
                         audio_bytes_tts, tts_error = synthesize_speech(response)
                         st.session_state.voice_generating_tts = False
@@ -1404,6 +1491,8 @@ def page_chat():
                                     # Widget key rotation: set pending, bump version, rerun
                                     st.session_state.voice_text_pending = transcript
                                     st.session_state.voice_widget_version += 1
+                                    # Reset mic to allow next recording / รีเซ็ตไมค์เพื่อบันทึกรอบถัดไป
+                                    st.session_state.voice_input_key += 1
                                     st.rerun()
                                 elif error:
                                     # Store error for retry UI
@@ -1771,10 +1860,11 @@ def page_end():
             session_data = get_latest_session_data()
 
         if session_data:
-            # Display in a nice format / แสดงในรูปแบบที่สวยงาม
+            # Display in a nice format with HTML escaping / แสดงในรูปแบบที่สวยงามพร้อม escape HTML
             for idx, row in enumerate(session_data):
                 speaker = row.get('Speaker', '')
                 message = row.get('Message', '')
+                safe_message = escape_html(message)
 
                 if speaker == 'user':
                     # Doctor's message / ข้อความของแพทย์
@@ -1782,7 +1872,7 @@ def page_end():
                         <div style='background: linear-gradient(135deg, #4a90a4 0%, #5ba3b8 100%);
                                     color: white; padding: 12px 16px; border-radius: 12px;
                                     margin: 8px 0;'>
-                            <b>👨‍⚕️ You:</b><br>{message}
+                            <b>👨‍⚕️ You:</b><br>{safe_message}
                         </div>
                     """, unsafe_allow_html=True)
                 elif speaker == 'assistant':
@@ -1791,7 +1881,7 @@ def page_end():
                         <div style='background-color: white; padding: 12px 16px;
                                     border-radius: 12px; margin: 8px 0;
                                     border: 2px solid #e3f2fd;'>
-                            <b style='color: #2c5f7d;'>🧑 Patient:</b><br>{message}
+                            <b style='color: #2c5f7d;'>🧑 Patient:</b><br>{safe_message}
                         </div>
                     """, unsafe_allow_html=True)
 
@@ -2002,6 +2092,8 @@ def page_end():
                                     new_text = transcript
                                 st.session_state.formulation_text_pending = new_text
                                 st.session_state.formulation_widget_version += 1
+                                # Reset mic to allow next recording / รีเซ็ตไมค์เพื่อบันทึกรอบถัดไป
+                                st.session_state.formulation_mic_key += 1
                                 st.rerun()
                             elif error:
                                 st.session_state.formulation_stt_error = error
@@ -2168,14 +2260,6 @@ def main():
     Main application function - controls page flow
     ฟังก์ชันหลักของแอป - ควบคุมการเปลี่ยนหน้า
     """
-    # Page configuration / ตั้งค่าหน้าเว็บ
-    st.set_page_config(
-        page_title="DigiHealth AI Patient",
-        page_icon="🏥",
-        layout="wide",
-        initial_sidebar_state="collapsed"
-    )
-
     # Custom CSS for medical/psychiatric theme / CSS ธีมทางการแพทย์
     st.markdown("""
         <style>

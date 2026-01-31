@@ -23,6 +23,7 @@ from google.oauth2.service_account import Credentials
 
 from voice_config import (
     STT_LANGUAGE_CODE,
+    STT_ALTERNATIVE_LANGUAGE_CODES,
     STT_ENABLE_AUTOMATIC_PUNCTUATION,
     STT_MODEL,
     TTS_LANGUAGE_CODE,
@@ -37,6 +38,7 @@ from voice_config import (
     ERROR_TTS_FAILED,
     ERROR_NO_AUDIO,
     ERROR_AUDIO_TOO_SHORT,
+    get_tts_voice_name,
 )
 
 
@@ -202,15 +204,27 @@ def transcribe_audio(audio_bytes: bytes) -> tuple:
         # Configure audio / ตั้งค่า audio
         audio = speech.RecognitionAudio(content=pcm_frames)
 
-        # Configure recognition / ตั้งค่าการรู้จำ
-        config = speech.RecognitionConfig(
-            encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
-            sample_rate_hertz=sample_rate,
-            language_code=STT_LANGUAGE_CODE,
-            enable_automatic_punctuation=STT_ENABLE_AUTOMATIC_PUNCTUATION,
-            model=STT_MODEL,
-            audio_channel_count=channels,
-        )
+        # Build recognition config / สร้างการตั้งค่าการรู้จำ
+        config_kwargs = {
+            "encoding": speech.RecognitionConfig.AudioEncoding.LINEAR16,
+            "sample_rate_hertz": sample_rate,
+            "language_code": STT_LANGUAGE_CODE,
+            "enable_automatic_punctuation": STT_ENABLE_AUTOMATIC_PUNCTUATION,
+            "model": STT_MODEL,
+            "audio_channel_count": channels,
+        }
+
+        # Add alternative language codes if configured
+        # เพิ่มรหัสภาษาทางเลือกถ้ามีการตั้งค่า
+        if STT_ALTERNATIVE_LANGUAGE_CODES:
+            try:
+                config_kwargs["alternative_language_codes"] = STT_ALTERNATIVE_LANGUAGE_CODES
+            except Exception:
+                # Field may not be supported in some API versions
+                # field อาจไม่รองรับใน API บางเวอร์ชัน
+                print("[WARNING] alternative_language_codes not supported, skipping")
+
+        config = speech.RecognitionConfig(**config_kwargs)
 
         print(f"[DEBUG] Sending {duration_seconds:.2f}s audio to STT API")
 
@@ -340,9 +354,11 @@ def synthesize_speech(text: str) -> tuple:
             "language_code": TTS_LANGUAGE_CODE,
         }
 
-        # Add voice name if specified / เพิ่มชื่อเสียงถ้าระบุไว้
-        if TTS_VOICE_NAME:
-            voice_params["name"] = TTS_VOICE_NAME
+        # Add voice name if specified (with secrets override support)
+        # เพิ่มชื่อเสียงถ้าระบุไว้ (รองรับ override จาก secrets)
+        tts_voice = get_tts_voice_name()
+        if tts_voice:
+            voice_params["name"] = tts_voice
 
         voice = texttospeech.VoiceSelectionParams(**voice_params)
 

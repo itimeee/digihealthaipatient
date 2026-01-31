@@ -118,3 +118,64 @@ ERROR_STT_FAILED = "ไม่สามารถถอดเสียงได้
 ERROR_TTS_FAILED = "ไม่สามารถสร้างเสียงตอบกลับได้"
 ERROR_NO_AUDIO = "ไม่พบข้อมูลเสียง กรุณาลองบันทึกใหม่"
 ERROR_AUDIO_TOO_SHORT = "เสียงสั้นเกินไป กรุณาลองบันทึกใหม่"
+
+
+# ============================================================================
+# SECRETS OVERRIDE / การ override จาก secrets
+# ============================================================================
+
+def get_voice_config(key: str, default=None):
+    """
+    Get voice config value from secrets with fallback to module defaults.
+    ดึงค่า config จาก secrets โดย fallback ไปค่าเริ่มต้นของโมดูล
+
+    Usage:
+        # In secrets.toml:
+        # [voice]
+        # tts_voice_name = "th-TH-Wavenet-A"
+        # tts_auto_play = false
+        # voice_minimal_ui = true
+
+    Args:
+        key: Config key name (e.g., "tts_voice_name", "tts_auto_play")
+        default: Default value if not found anywhere
+
+    Returns:
+        Config value from secrets, or module default, or provided default
+    """
+    try:
+        import streamlit as st
+        voice_secrets = st.secrets.get("voice", {})
+        if key in voice_secrets:
+            return voice_secrets[key]
+    except Exception:
+        pass
+
+    # Fall back to module-level default
+    module_defaults = {
+        "tts_voice_name": TTS_VOICE_NAME,
+        "tts_auto_play": TTS_AUTO_PLAY,
+        "voice_minimal_ui": VOICE_MINIMAL_UI,
+        "tts_speaking_rate": TTS_SPEAKING_RATE,
+        "tts_pitch": TTS_PITCH,
+        "tts_volume_gain_db": TTS_VOLUME_GAIN_DB,
+        "stt_language_code": STT_LANGUAGE_CODE,
+        "stt_alternative_language_codes": STT_ALTERNATIVE_LANGUAGE_CODES,
+    }
+
+    return module_defaults.get(key, default)
+
+
+def get_tts_voice_name() -> str:
+    """Get TTS voice name from secrets or default."""
+    return get_voice_config("tts_voice_name", TTS_VOICE_NAME)
+
+
+def get_tts_auto_play() -> bool:
+    """Get TTS auto-play setting from secrets or default."""
+    return get_voice_config("tts_auto_play", TTS_AUTO_PLAY)
+
+
+def get_voice_minimal_ui() -> bool:
+    """Get voice minimal UI setting from secrets or default."""
+    return get_voice_config("voice_minimal_ui", VOICE_MINIMAL_UI)

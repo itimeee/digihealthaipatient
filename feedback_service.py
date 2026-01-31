@@ -10,7 +10,6 @@ Uses Gemini 3 Pro (primary) with deep thinking for comprehensive evaluation.
 
 import json
 import re
-import streamlit as st
 
 # Import GenAI client and types / นำเข้า GenAI client และ types
 from genai_client import (
