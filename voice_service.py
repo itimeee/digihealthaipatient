@@ -13,6 +13,8 @@ This module provides:
 - transcribe_audio(): แปลงเสียงเป็นข้อความด้วย Google Cloud STT
 - synthesize_speech(): แปลงข้อความเป็นเสียงด้วย Google Cloud TTS
 - ฟังก์ชันช่วยเหลือสำหรับการประมวลผลเสียง
+
+Version: 2.1.0 - Improved Cloud Diagnostics
 """
 
 import wave
@@ -21,6 +23,9 @@ import re
 import json
 import streamlit as st
 from google.oauth2.service_account import Credentials
+
+# Log module load for debugging on Streamlit Cloud
+print("[VOICE][INFO] voice_service module loading...")
 
 from voice_config import (
     STT_LANGUAGE_CODE,

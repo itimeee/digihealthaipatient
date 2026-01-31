@@ -1,6 +1,8 @@
 """
 DigiHealth AI Patient - Psychiatric Training Application
 แอปพลิเคชันฝึกซ้อมการซักประวัติผู้ป่วยทางจิตเวช
+
+Version: 2.1.0 - Voice Mode Cloud Fix
 """
 
 import html
