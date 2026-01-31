@@ -17,6 +17,7 @@ This module provides:
 
 import wave
 import io
+import re
 import streamlit as st
 from google.oauth2.service_account import Credentials
 
@@ -30,6 +31,7 @@ from voice_config import (
     TTS_PITCH,
     TTS_AUDIO_ENCODING,
     TTS_VOLUME_GAIN_DB,
+    TTS_DOCTOR_PRONUNCIATION_MODE,
     VOICE_SAMPLE_RATE,
     ERROR_STT_FAILED,
     ERROR_TTS_FAILED,
@@ -249,6 +251,45 @@ def transcribe_audio(audio_bytes: bytes) -> tuple:
 # TEXT-TO-SPEECH / การแปลงข้อความเป็นเสียง
 # ============================================================================
 
+def normalize_for_tts_th(text: str) -> str:
+    """
+    Normalize Thai text for TTS to fix pronunciation issues.
+    ปรับข้อความภาษาไทยสำหรับ TTS เพื่อแก้ปัญหาการออกเสียง
+
+    Fixes the word "หมอ" (doctor) being pronounced as "หอ-มอ-ออ"
+    instead of the correct pronunciation.
+
+    Args:
+        text: Original text to normalize
+
+    Returns:
+        Normalized text for TTS (original text is preserved in UI/transcript)
+    """
+    if not text or not TTS_DOCTOR_PRONUNCIATION_MODE:
+        return text
+
+    mode = TTS_DOCTOR_PRONUNCIATION_MODE.lower()
+
+    if mode == "maw":
+        # Replace "หมอ" -> "มอ" (shorter, may sound casual)
+        # แทน "หมอ" -> "มอ" (สั้นลง อาจฟังดูไม่เป็นทางการ)
+        text = re.sub(r'คุณหมอ', 'คุณมอ', text)
+        text = re.sub(r'หมอ', 'มอ', text)
+
+    elif mode == "zwj":
+        # Replace "หมอ" -> "ห\u200Cมอ" (Zero-Width Non-Joiner to change tokenization)
+        # แทน "หมอ" -> "ห\u200Cมอ" (ใช้ ZWNJ เปลี่ยนการตัดคำ)
+        text = re.sub(r'หมอ', 'ห\u200Cมอ', text)
+
+    elif mode == "physician":
+        # Replace "หมอ" -> "แพทย์" (formal, guaranteed correct pronunciation)
+        # แทน "หมอ" -> "แพทย์" (เป็นทางการ รับประกันการออกเสียงถูกต้อง)
+        text = re.sub(r'คุณหมอ', 'คุณแพทย์', text)
+        text = re.sub(r'หมอ', 'แพทย์', text)
+
+    return text
+
+
 def synthesize_speech(text: str) -> tuple:
     """
     Synthesize speech from text using Google Cloud Text-to-Speech.
@@ -272,6 +313,13 @@ def synthesize_speech(text: str) -> tuple:
     if len(text) > max_chars:
         text = text[:max_chars]
         print(f"[WARNING] Text truncated to {max_chars} chars for TTS")
+
+    # Normalize Thai text for TTS (fixes pronunciation issues)
+    # ปรับข้อความภาษาไทยสำหรับ TTS (แก้ปัญหาการออกเสียง)
+    original_text = text
+    text = normalize_for_tts_th(text)
+    if text != original_text:
+        print(f"[DEBUG] TTS text normalized: '{original_text[:50]}...' -> '{text[:50]}...'")
 
     # Get TTS client / รับ TTS client
     client = get_tts_client()

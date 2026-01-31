@@ -62,6 +62,19 @@ TTS_AUDIO_ENCODING = "MP3"
 # การเพิ่มเสียง (dB) (-96.0 ถึง 16.0)
 TTS_VOLUME_GAIN_DB = 0.0
 
+# TTS Text Normalization for Thai / การ normalize ข้อความภาษาไทยสำหรับ TTS
+# Fixes pronunciation issues like "หมอ" being spelled out as "หอ-มอ-ออ"
+# แก้ปัญหาการออกเสียงเช่น "หมอ" ถูกสะกดเป็น "หอ-มอ-ออ"
+#
+# Options / ตัวเลือก:
+#   - None or "": Disabled, no normalization
+#   - "maw": Replace "หมอ" -> "มอ" (shorter, may sound casual)
+#   - "zwj": Replace "หมอ" -> "ห\u200Cมอ" (Zero-Width Non-Joiner to change tokenization)
+#   - "physician": Replace "หมอ" -> "แพทย์", "คุณหมอ" -> "คุณแพทย์" (formal, guaranteed correct)
+#
+# Recommended: "physician" for most reliable pronunciation
+TTS_DOCTOR_PRONUNCIATION_MODE = "physician"
+
 
 # ============================================================================
 # GENERAL VOICE SETTINGS / การตั้งค่าเสียงทั่วไป
