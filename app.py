@@ -1090,21 +1090,26 @@ def page_chat():
             has_audio = (current_mode == 'voice' and idx in st.session_state.tts_audio_b64_by_msg)
 
             if has_audio:
-                # Message with speaker icon for replay
+                # Message with speaker icon for replay using components.html for JavaScript
                 audio_b64 = st.session_state.tts_audio_b64_by_msg[idx]
-                st.markdown(
-                    f"<div style='display: flex; align-items: flex-start; gap: 8px; max-width: 85%;'>"
-                    f"<div style='text-align: left; background-color: white; padding: 12px 16px; "
-                    f"border-radius: 18px 18px 18px 4px; margin: 8px 0; "
-                    f"border: 2px solid #e3f2fd; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08); "
-                    f"flex: 1; color: #37474f;'>"
-                    f"<b style='color: #2c5f7d;'>Patient:</b> {message['content']}</div>"
-                    f"<button onclick=\"new Audio('data:audio/mpeg;base64,{audio_b64}').play()\" "
-                    f"style='background: #4a90a4; color: white; border: none; border-radius: 50%; "
-                    f"width: 32px; height: 32px; cursor: pointer; font-size: 14px; margin-top: 12px; "
-                    f"box-shadow: 0 2px 4px rgba(0,0,0,0.2);' title='Replay audio'>🔊</button>"
-                    f"</div>",
-                    unsafe_allow_html=True
+                # Use components.html for the entire message+button to allow JavaScript
+                components.html(
+                    f"""
+                    <div style='display: flex; align-items: flex-start; gap: 8px; max-width: 85%; font-family: "Source Sans Pro", sans-serif;'>
+                        <div style='text-align: left; background-color: white; padding: 12px 16px;
+                            border-radius: 18px 18px 18px 4px; margin: 8px 0;
+                            border: 2px solid #e3f2fd; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+                            flex: 1; color: #37474f; font-size: 14px; line-height: 1.5;'>
+                            <b style='color: #2c5f7d;'>Patient:</b> {message['content']}
+                        </div>
+                        <button onclick="new Audio('data:audio/mpeg;base64,{audio_b64}').play()"
+                            style='background: #4a90a4; color: white; border: none; border-radius: 50%;
+                            width: 32px; height: 32px; cursor: pointer; font-size: 14px; margin-top: 12px;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.2); flex-shrink: 0;'
+                            title='Replay audio'>🔊</button>
+                    </div>
+                    """,
+                    height=100 + (len(message['content']) // 50) * 20  # Dynamic height based on content
                 )
             else:
                 # Standard message without audio
