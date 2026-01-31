@@ -962,17 +962,6 @@ def page_pre_brief():
     # Mode selection / เลือกโหมด
     st.subheader("Select Interview Mode / เลือกโหมดการสัมภาษณ์")
 
-    import streamlit as st
-
-    sa = st.secrets.get("gcp_service_account", None)
-    st.write("DEBUG voice:")
-    st.write("has gcp_service_account:", sa is not None)
-    st.write("type:", type(sa).__name__)
-    if isinstance(sa, dict):
-        st.write("keys:", list(sa.keys()))
-    elif isinstance(sa, str):
-        st.write("first 50 chars:", sa[:50])
-
     # Initialize selected mode in session state / เริ่มต้นโหมดที่เลือกใน session state
     if 'selected_mode' not in st.session_state:
         st.session_state.selected_mode = 'text'
