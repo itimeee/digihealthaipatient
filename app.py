@@ -969,9 +969,9 @@ def page_pre_brief():
     st.write("has gcp_service_account:", sa is not None)
     st.write("type:", type(sa).__name__)
     if isinstance(sa, dict):
-    st.write("keys:", list(sa.keys()))
+        st.write("keys:", list(sa.keys()))
     elif isinstance(sa, str):
-    st.write("first 50 chars:", sa[:50])
+        st.write("first 50 chars:", sa[:50])
 
     # Initialize selected mode in session state / เริ่มต้นโหมดที่เลือกใน session state
     if 'selected_mode' not in st.session_state:
