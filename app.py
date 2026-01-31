@@ -1330,8 +1330,6 @@ def page_chat():
             # Show status indicators / แสดงสถานะ
             if st.session_state.voice_transcribing:
                 st.info(f"🎙️ {STATUS_TRANSCRIBING}")
-            elif st.session_state.ai_responding:
-                st.info("🤔 กำลังรอคำตอบจาก AI...")
             elif st.session_state.voice_generating_tts:
                 st.info(f"🔊 {STATUS_GENERATING_TTS}")
 
