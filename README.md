@@ -92,6 +92,55 @@ TIMER_DURATION_MINUTES = 30
 case_history = """Edit the patient case details here..."""
 ```
 
+### TTS Model Selection
+
+The application supports selectable TTS (Text-to-Speech) models via the Gemini TTS API. Configure defaults in `voice_config.py`:
+
+```python
+# Default TTS model (Gemini 2.5 Flash TTS)
+TTS_MODEL_NAME = "gemini-2.5-flash-tts"
+
+# Optional style prompt to guide the speaking style
+TTS_STYLE_PROMPT = ""  # e.g. "Speak in a calm, gentle tone like a patient."
+```
+
+**Supported models:**
+
+| Model | Description |
+|-------|-------------|
+| `gemini-2.5-flash-tts` | Fast, high-quality (default) |
+| `gemini-2.5-pro-tts` | Highest quality, slower |
+| `gemini-2.5-flash-lite-preview-tts` | Lightweight, fastest |
+
+Users can also select the TTS model and style prompt from the **TTS Settings** panel in the Voice Mode pre-brief page before starting a case.
+
+**Per-request override via `synthesize_speech()`:**
+
+```python
+from voice_service import synthesize_speech
+
+# Use default model from config
+audio, error = synthesize_speech("Hello world")
+
+# Override model and prompt for a single call
+audio, error = synthesize_speech(
+    "Hello world",
+    model_name="gemini-2.5-pro-tts",
+    style_prompt="Speak slowly and clearly.",
+)
+```
+
+### Gemini TTS Requirements
+
+To use Gemini TTS models, ensure the following:
+
+1. **Dependency**: `google-cloud-texttospeech>=2.29.0` (already set in `requirements.txt`)
+2. **API enabled**: Enable the **Cloud Text-to-Speech API** in your Google Cloud project
+3. **IAM permissions**: The service account needs:
+   - `roles/texttospeech.user` (or `textToSpeech.synthesize` permission)
+   - For Gemini TTS models, you may also need `aiplatform.endpoints.predict` permission
+4. **Billing**: Gemini TTS models require an active billing account on the GCP project
+
 ## Usage Guide
 
 ### For Students:

@@ -46,6 +46,31 @@ TTS_LANGUAGE_CODE = "th-TH"
 # Set to None to use the default voice for the language
 TTS_VOICE_NAME = "th-TH-Standard-A"
 
+# TTS Model selection / เลือกโมเดล TTS
+# Gemini TTS models provide more natural, expressive speech synthesis.
+# โมเดล Gemini TTS ให้เสียงที่เป็นธรรมชาติและมีอารมณ์มากขึ้น
+# Supported models / โมเดลที่รองรับ:
+#   - "gemini-2.5-flash-tts": Fast, high-quality (default)
+#   - "gemini-2.5-pro-tts": Highest quality, slower
+#   - "gemini-2.5-flash-lite-preview-tts": Lightweight, fastest
+#   - "" (empty): Use classic Google Cloud TTS (no model_name param)
+TTS_MODEL_NAME = "gemini-2.5-flash-tts"
+
+# Allowed TTS models for validation / โมเดล TTS ที่อนุญาตสำหรับการตรวจสอบ
+TTS_ALLOWED_MODELS = [
+    "gemini-2.5-flash-tts",
+    "gemini-2.5-pro-tts",
+    "gemini-2.5-flash-lite-preview-tts",
+]
+
+# TTS Style Prompt (optional) / คำสั่งสไตล์สำหรับ TTS (ถ้าต้องการ)
+# A text prompt that guides the speaking style of the generated audio.
+# ข้อความที่แนะนำสไตล์การพูดของเสียงที่สร้าง
+# Example: "Speak in a calm, gentle, and empathetic tone like a patient."
+# ตัวอย่าง: "Speak in a calm, gentle, and empathetic tone like a patient."
+# Leave empty to use the model's default style.
+TTS_STYLE_PROMPT = ""
+
 # Speaking rate (speed) - 0.25 to 4.0, where 1.0 is normal
 # อัตราการพูด (ความเร็ว) - 0.25 ถึง 4.0, โดย 1.0 คือปกติ
 TTS_SPEAKING_RATE = 1.0

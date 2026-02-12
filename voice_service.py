@@ -32,6 +32,9 @@ from voice_config import (
     TTS_AUDIO_ENCODING,
     TTS_VOLUME_GAIN_DB,
     TTS_DOCTOR_FIX,
+    TTS_MODEL_NAME,
+    TTS_STYLE_PROMPT,
+    TTS_ALLOWED_MODELS,
     VOICE_SAMPLE_RATE,
     ERROR_STT_FAILED,
     ERROR_TTS_FAILED,
@@ -293,22 +296,37 @@ def normalize_for_tts_th(text: str) -> str:
     return text
 
 
-def synthesize_speech(text: str) -> tuple:
+def synthesize_speech(text: str, model_name: str = None, style_prompt: str = None) -> tuple:
     """
     Synthesize speech from text using Google Cloud Text-to-Speech.
     สร้างเสียงจากข้อความด้วย Google Cloud Text-to-Speech
 
     Args:
         text: Text to convert to speech / ข้อความที่จะแปลงเป็นเสียง
+        model_name: TTS model to use (optional, defaults to TTS_MODEL_NAME from config)
+                    โมเดล TTS ที่ใช้ (ถ้าไม่ระบุ จะใช้ค่าจาก config)
+        style_prompt: Style prompt for Gemini TTS models (optional, defaults to TTS_STYLE_PROMPT)
+                      คำสั่งสไตล์สำหรับโมเดล Gemini TTS (ถ้าไม่ระบุ จะใช้ค่าจาก config)
 
     Returns:
         Tuple of (audio_bytes: bytes, error_message: str or None)
         - On success: (mp3_bytes, None)
         - On failure: (None, error_message)
     """
+    # Use config defaults if not provided / ใช้ค่า default จาก config ถ้าไม่ระบุ
+    if model_name is None:
+        model_name = TTS_MODEL_NAME
+    if style_prompt is None:
+        style_prompt = TTS_STYLE_PROMPT
+
     # Validate input / ตรวจสอบ input
     if not text or not text.strip():
         return None, "No text provided for TTS"
+
+    # Validate model name if provided / ตรวจสอบชื่อโมเดลถ้าระบุ
+    if model_name and model_name not in TTS_ALLOWED_MODELS:
+        allowed = ", ".join(TTS_ALLOWED_MODELS)
+        return None, f"Unknown TTS model '{model_name}'. Allowed models: {allowed}"
 
     # Truncate text if too long (TTS has limits)
     # ตัดข้อความถ้ายาวเกินไป (TTS มี limit)
@@ -332,8 +350,28 @@ def synthesize_speech(text: str) -> tuple:
     try:
         from google.cloud import texttospeech
 
-        # Set the text input / ตั้งค่า text input
-        synthesis_input = texttospeech.SynthesisInput(text=text)
+        # Set the text input with optional style prompt / ตั้งค่า text input พร้อม style prompt
+        input_params = {"text": text}
+        if model_name and style_prompt:
+            # Only include prompt when using a Gemini TTS model and prompt is non-empty
+            # ใส่ prompt เฉพาะเมื่อใช้โมเดล Gemini TTS และ prompt ไม่ว่าง
+            try:
+                input_params["prompt"] = style_prompt
+            except TypeError:
+                # SynthesisInput may not support 'prompt' in older library versions
+                print("[WARNING] SynthesisInput does not support 'prompt'. "
+                      "Upgrade google-cloud-texttospeech>=2.29.0 for Gemini TTS prompt support.")
+
+        try:
+            synthesis_input = texttospeech.SynthesisInput(**input_params)
+        except TypeError as te:
+            # Graceful fallback if 'prompt' is not supported by installed library version
+            if "prompt" in str(te):
+                print("[WARNING] SynthesisInput does not support 'prompt' parameter. "
+                      "Upgrade google-cloud-texttospeech>=2.29.0 for Gemini TTS prompt support.")
+                synthesis_input = texttospeech.SynthesisInput(text=text)
+            else:
+                raise
 
         # Build voice parameters / สร้าง parameters สำหรับเสียง
         voice_params = {
@@ -344,7 +382,21 @@ def synthesize_speech(text: str) -> tuple:
         if TTS_VOICE_NAME:
             voice_params["name"] = TTS_VOICE_NAME
 
-        voice = texttospeech.VoiceSelectionParams(**voice_params)
+        # Add model_name for Gemini TTS models / เพิ่ม model_name สำหรับโมเดล Gemini TTS
+        if model_name:
+            try:
+                voice_params["model"] = model_name
+                voice = texttospeech.VoiceSelectionParams(**voice_params)
+            except TypeError as te:
+                if "model" in str(te):
+                    print("[WARNING] VoiceSelectionParams does not support 'model' parameter. "
+                          "Upgrade google-cloud-texttospeech>=2.29.0 for Gemini TTS model selection.")
+                    del voice_params["model"]
+                    voice = texttospeech.VoiceSelectionParams(**voice_params)
+                else:
+                    raise
+        else:
+            voice = texttospeech.VoiceSelectionParams(**voice_params)
 
         # Force MP3 encoding for browser compatibility
         # บังคับใช้ MP3 encoding เพื่อความเข้ากันได้กับ browser
@@ -358,7 +410,8 @@ def synthesize_speech(text: str) -> tuple:
             volume_gain_db=TTS_VOLUME_GAIN_DB,
         )
 
-        print(f"[DEBUG] Synthesizing {len(text)} chars to speech")
+        print(f"[DEBUG] Synthesizing {len(text)} chars to speech "
+              f"(model={model_name or 'classic'}, prompt={'yes' if style_prompt else 'no'})")
 
         # Perform synthesis / ดำเนินการสังเคราะห์เสียง
         response = client.synthesize_speech(
@@ -382,6 +435,10 @@ def synthesize_speech(text: str) -> tuple:
             return None, "TTS API quota exceeded"
         elif "permission" in error_msg.lower() or "403" in error_msg:
             return None, "Text-to-Speech API not enabled. กรุณาเปิดใช้งาน API ใน Google Cloud Console"
+        elif "model" in error_msg.lower() and "not found" in error_msg.lower():
+            return None, (f"TTS model '{model_name}' not available. "
+                          "Ensure your project has the Text-to-Speech API enabled and "
+                          "google-cloud-texttospeech>=2.29.0 is installed.")
         else:
             return None, f"{ERROR_TTS_FAILED}: {error_msg[:100]}"
 

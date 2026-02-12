@@ -56,6 +56,9 @@ from voice_config import (
     STATUS_GENERATING_TTS,
     TTS_AUTO_PLAY,
     VOICE_SAMPLE_RATE,
+    TTS_MODEL_NAME,
+    TTS_STYLE_PROMPT,
+    TTS_ALLOWED_MODELS,
 )
 from voice_service import (
     transcribe_audio,
@@ -671,6 +674,13 @@ def initialize_session_state():
     if 'formulation_clear_pending' not in st.session_state:
         st.session_state.formulation_clear_pending = False
 
+    # TTS model selection state / สถานะการเลือกโมเดล TTS
+    if 'tts_model' not in st.session_state:
+        st.session_state.tts_model = TTS_MODEL_NAME
+
+    if 'tts_prompt' not in st.session_state:
+        st.session_state.tts_prompt = TTS_STYLE_PROMPT
+
 
 # ============================================================================
 # PAGE 1: HOMEPAGE / LOGIN
@@ -901,6 +911,40 @@ def page_pre_brief():
             st.warning("⚠️ **Voice Mode** is not available. Speech-to-Text API is not configured. Please check your Google Cloud setup or use Text Mode.")
     else:
         st.success("✅ **Text Mode selected.** You will type your questions and the AI patient will respond in text. Click 'Start Case' when you're ready to begin the interview.")
+
+    # TTS Model Selection (shown when voice mode is selected)
+    # การเลือกโมเดล TTS (แสดงเมื่อเลือก voice mode)
+    if st.session_state.selected_mode == 'voice':
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander("🔊 TTS Settings / ตั้งค่าเสียง", expanded=False):
+            # Model dropdown / เลือกโมเดล
+            tts_model_options = TTS_ALLOWED_MODELS
+            current_model_index = 0
+            if st.session_state.tts_model in tts_model_options:
+                current_model_index = tts_model_options.index(st.session_state.tts_model)
+
+            selected_model = st.selectbox(
+                "TTS Model / โมเดลเสียง",
+                options=tts_model_options,
+                index=current_model_index,
+                key="tts_model_select",
+                help="Select the Text-to-Speech model. "
+                     "gemini-2.5-flash-tts (default) balances speed and quality. "
+                     "gemini-2.5-pro-tts offers highest quality. "
+                     "gemini-2.5-flash-lite-preview-tts is the fastest.",
+            )
+            st.session_state.tts_model = selected_model
+
+            # Style prompt / คำสั่งสไตล์
+            style_prompt = st.text_input(
+                "Style Prompt (optional) / คำสั่งสไตล์ (ถ้าต้องการ)",
+                value=st.session_state.tts_prompt,
+                key="tts_prompt_input",
+                placeholder="e.g. Speak in a calm, gentle tone like a patient.",
+                help="Guide the speaking style of the generated audio. "
+                     "Leave empty for the model's default style.",
+            )
+            st.session_state.tts_prompt = style_prompt
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -1307,6 +1351,11 @@ def page_chat():
                 st.session_state.voice_text_value = ""
                 st.session_state.voice_send_pending = False
 
+                # Capture TTS settings before thread starts (thread-safe)
+                # บันทึกค่า TTS settings ก่อนเริ่ม thread (thread-safe)
+                tts_model_for_request = st.session_state.get('tts_model', TTS_MODEL_NAME)
+                tts_prompt_for_request = st.session_state.get('tts_prompt', TTS_STYLE_PROMPT)
+
                 # Start AI response thread
                 def ai_response_callback_voice():
                     """Background thread function to get AI response with TTS"""
@@ -1319,7 +1368,11 @@ def page_chat():
                     # Generate TTS for voice mode
                     if response and TTS_AUTO_PLAY:
                         st.session_state.voice_generating_tts = True
-                        audio_bytes_tts, tts_error = synthesize_speech(response)
+                        audio_bytes_tts, tts_error = synthesize_speech(
+                            response,
+                            model_name=tts_model_for_request,
+                            style_prompt=tts_prompt_for_request or None,
+                        )
                         st.session_state.voice_generating_tts = False
                         if audio_bytes_tts:
                             st.session_state.pending_ai_audio = audio_bytes_tts
