@@ -479,26 +479,32 @@ def synthesize_speech(text: str, model_name: str = None, style_prompt: str = Non
             "language_code": TTS_LANGUAGE_CODE,
         }
 
-        # Add voice name if specified / เพิ่มชื่อเสียงถ้าระบุไว้
-        if TTS_VOICE_NAME:
-            voice_params["name"] = TTS_VOICE_NAME
-
         # Add model_name for Gemini TTS models / เพิ่ม model_name สำหรับโมเดล Gemini TTS
-        if model_name:
+        if model_name and model_name in TTS_ALLOWED_MODELS:
+            # Gemini TTS uses Gemini voice names (e.g. "Kore"), not classic names
+            # Gemini TTS ใช้ชื่อเสียง Gemini (เช่น "Kore") ไม่ใช่ชื่อ classic
+            voice_params["name"] = TTS_GEMINI_VOICE_NAME
             try:
-                voice_params["model"] = model_name
+                voice_params["model_name"] = model_name
                 voice = texttospeech.VoiceSelectionParams(**voice_params)
             except (TypeError, ValueError) as te:
-                # proto-plus raises ValueError for unknown fields, TypeError for wrong types
-                if "model" in str(te):
-                    print("[WARNING] VoiceSelectionParams does not support 'model' parameter. "
-                          "Upgrade google-cloud-texttospeech>=2.29.0 for Gemini TTS model selection. "
+                if "model_name" in str(te):
+                    print("[WARNING] VoiceSelectionParams does not support 'model_name'. "
+                          "Upgrade google-cloud-texttospeech>=2.29.0 for Gemini TTS. "
                           "Falling back to classic TTS.")
-                    del voice_params["model"]
+                    del voice_params["model_name"]
+                    # Revert to classic voice name for fallback
+                    if TTS_VOICE_NAME:
+                        voice_params["name"] = TTS_VOICE_NAME
+                    else:
+                        del voice_params["name"]
                     voice = texttospeech.VoiceSelectionParams(**voice_params)
                 else:
                     raise
         else:
+            # Classic TTS: use configured voice name
+            if TTS_VOICE_NAME:
+                voice_params["name"] = TTS_VOICE_NAME
             voice = texttospeech.VoiceSelectionParams(**voice_params)
 
         # Force MP3 encoding for browser compatibility
