@@ -216,3 +216,38 @@ QUALITY RULES
 - หลีกเลี่ยงการให้คำแนะนำที่เกินบริบท (เช่น สั่งยา) ถ้า transcript/โจทย์ไม่ได้ถามเรื่องนั้น ให้โฟกัสที่ “การซักประวัติ + reasoning”
 - ตอบ JSON ล้วนเท่านั้น
 """
+
+# =============================================================================
+# FEEDBACK USER PROMPT TEMPLATE / Template สำหรับ User Prompt
+# =============================================================================
+
+FEEDBACK_USER_PROMPT_TEMPLATE = """## ข้อมูล Session
+- **ผู้สัมภาษณ์**: {user_name} ({user_email})
+- **เคส**: {case_name}
+- **โหมด**: {selected_mode}
+- **ระยะเวลา**: {duration_seconds} วินาที ({duration_minutes} นาที)
+- **จำนวนข้อความทั้งหมด**: {total_messages} ข้อความ
+- **จำนวนคำถามของแพทย์**: {doctor_turns} คำถาม
+- **จำนวนคำตอบของผู้ป่วย**: {patient_turns} คำตอบ
+
+## Transcript การสัมภาษณ์
+{transcript_text}
+
+## คำตอบของผู้สัมภาษณ์
+
+### Provisional Diagnosis
+{provisional_dx}
+
+### Differential Diagnosis
+1. {ddx1}
+2. {ddx2}
+3. {ddx3}
+
+### Psychodynamic Formulation
+**Framework ที่เลือก**: {formulation_framework}
+**Formulation**:
+{formulation_text}
+
+---
+
+กรุณาประเมินและให้ feedback ตามหลักการที่กำหนดไว้ โดยตอบเป็น JSON format ที่กำหนด"""
