@@ -253,28 +253,6 @@ def transcribe_audio(audio_bytes: bytes) -> tuple:
 # TEXT-TO-SPEECH / การแปลงข้อความเป็นเสียง
 # ============================================================================
 
-def normalize_for_tts_th(text: str) -> str:
-    """
-    Normalize Thai text for TTS to fix pronunciation issues.
-    ปรับข้อความภาษาไทยสำหรับ TTS เพื่อแก้ปัญหาการออกเสียง
-
-    Fixes the word "หมอ" (doctor) being pronounced as "หอ-มอ-ออ"
-    by inserting a zero-width character to change tokenization.
-
-    Only replaces standalone "หมอ", not compound words like "หมอฟัน", "หมอผี".
-    แทนเฉพาะคำว่า "หมอ" เดี่ยวๆ ไม่แทนคำประสม เช่น "หมอฟัน", "หมอผี"
-
-    Args:
-        text: Original text to normalize
-
-    Returns:
-        Normalized text for TTS (original text is preserved in UI/transcript)
-    """
-    if not text or not TTS_DOCTOR_FIX:
-        return text
-
-    mode = TTS_DOCTOR_FIX.lower()
-
     # Choose zero-width character based on mode
     # เลือก zero-width character ตามโหมด
     if mode == "zwnj":
@@ -333,13 +311,6 @@ def synthesize_speech(text: str, model_name: str = None, style_prompt: str = Non
     if len(text) > max_chars:
         text = text[:max_chars]
         print(f"[WARNING] Text truncated to {max_chars} chars for TTS")
-
-    # Normalize Thai text for TTS (fixes pronunciation issues)
-    # ปรับข้อความภาษาไทยสำหรับ TTS (แก้ปัญหาการออกเสียง)
-    original_text = text
-    text = normalize_for_tts_th(text)
-    if text != original_text:
-        print(f"[DEBUG] TTS text normalized: '{original_text[:50]}...' -> '{text[:50]}...'")
 
     # Get TTS client / รับ TTS client
     client = get_tts_client()
