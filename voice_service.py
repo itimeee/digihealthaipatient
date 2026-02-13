@@ -334,8 +334,9 @@ def synthesize_speech(text: str, model_name: str = None, style_prompt: str = Non
 
         try:
             synthesis_input = texttospeech.SynthesisInput(**input_params)
-        except TypeError as te:
+        except (TypeError, ValueError) as te:
             # Graceful fallback if 'prompt' is not supported by installed library version
+            # proto-plus raises ValueError for unknown fields, TypeError for wrong types
             if "prompt" in str(te):
                 print("[WARNING] SynthesisInput does not support 'prompt' parameter. "
                       "Upgrade google-cloud-texttospeech>=2.29.0 for Gemini TTS prompt support.")
@@ -357,10 +358,12 @@ def synthesize_speech(text: str, model_name: str = None, style_prompt: str = Non
             try:
                 voice_params["model"] = model_name
                 voice = texttospeech.VoiceSelectionParams(**voice_params)
-            except TypeError as te:
+            except (TypeError, ValueError) as te:
+                # proto-plus raises ValueError for unknown fields, TypeError for wrong types
                 if "model" in str(te):
                     print("[WARNING] VoiceSelectionParams does not support 'model' parameter. "
-                          "Upgrade google-cloud-texttospeech>=2.29.0 for Gemini TTS model selection.")
+                          "Upgrade google-cloud-texttospeech>=2.29.0 for Gemini TTS model selection. "
+                          "Falling back to classic TTS.")
                     del voice_params["model"]
                     voice = texttospeech.VoiceSelectionParams(**voice_params)
                 else:
