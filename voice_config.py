@@ -63,6 +63,11 @@ TTS_ALLOWED_MODELS = [
     "gemini-2.5-flash-lite-preview-tts",
 ]
 
+# Gemini TTS voice name (used when synthesizing via GenAI SDK)
+# ชื่อเสียงสำหรับ Gemini TTS (ใช้เมื่อสังเคราะห์ผ่าน GenAI SDK)
+# Available voices / เสียงที่มี: Zephyr, Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Pegasus
+TTS_GEMINI_VOICE_NAME = "Kore"
+
 # TTS Style Prompt (optional) / คำสั่งสไตล์สำหรับ TTS (ถ้าต้องการ)
 # A text prompt that guides the speaking style of the generated audio.
 # ข้อความที่แนะนำสไตล์การพูดของเสียงที่สร้าง

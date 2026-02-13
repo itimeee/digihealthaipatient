@@ -34,6 +34,7 @@ from voice_config import (
     TTS_MODEL_NAME,
     TTS_STYLE_PROMPT,
     TTS_ALLOWED_MODELS,
+    TTS_GEMINI_VOICE_NAME,
     VOICE_SAMPLE_RATE,
     ERROR_STT_FAILED,
     ERROR_TTS_FAILED,
@@ -273,6 +274,127 @@ def transcribe_audio(audio_bytes: bytes) -> tuple:
     return text
 
 
+# ============================================================================
+# GENAI SDK TTS / สังเคราะห์เสียงผ่าน GenAI SDK
+# ============================================================================
+
+def _pcm_to_wav(pcm_data: bytes, sample_rate: int = 24000,
+                channels: int = 1, sample_width: int = 2) -> bytes:
+    """Convert raw PCM bytes to WAV format for browser playback.
+    แปลง PCM bytes เป็น WAV สำหรับเล่นในเบราว์เซอร์"""
+    buffer = io.BytesIO()
+    with wave.open(buffer, 'wb') as wf:
+        wf.setnchannels(channels)
+        wf.setsampwidth(sample_width)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm_data)
+    return buffer.getvalue()
+
+
+def detect_audio_mime(audio_bytes: bytes) -> str:
+    """Detect audio MIME type from file header bytes.
+    ตรวจจับ MIME type ของเสียงจาก header bytes"""
+    if not audio_bytes or len(audio_bytes) < 4:
+        return "audio/mpeg"
+    if audio_bytes[:4] == b'RIFF':
+        return "audio/wav"
+    if audio_bytes[:3] == b'ID3' or (audio_bytes[0] == 0xFF and (audio_bytes[1] & 0xE0) == 0xE0):
+        return "audio/mpeg"
+    if audio_bytes[:4] == b'OggS':
+        return "audio/ogg"
+    return "audio/mpeg"
+
+
+def _synthesize_speech_genai(text: str, model_name: str,
+                             style_prompt: str = None) -> tuple:
+    """
+    Synthesize speech using GenAI SDK (Gemini API) for Gemini TTS models.
+    สังเคราะห์เสียงผ่าน GenAI SDK สำหรับโมเดล Gemini TTS
+
+    Args:
+        text: Text to synthesize / ข้อความที่จะสังเคราะห์
+        model_name: Gemini TTS model name / ชื่อโมเดล Gemini TTS
+        style_prompt: Optional style prompt / คำสั่งสไตล์ (ถ้ามี)
+
+    Returns:
+        Tuple of (audio_bytes, error_message)
+    """
+    try:
+        from genai_client import get_client
+        from google.genai import types
+    except ImportError:
+        return None, "GenAI SDK not available for TTS"
+
+    try:
+        client = get_client()
+
+        # Build contents - include style prompt if provided
+        # สร้างเนื้อหา - รวม style prompt ถ้ามี
+        if style_prompt:
+            contents = f"{style_prompt}: {text}"
+        else:
+            contents = text
+
+        gemini_voice = TTS_GEMINI_VOICE_NAME
+
+        # Build config for audio generation
+        # สร้าง config สำหรับการสร้างเสียง
+        config = types.GenerateContentConfig(
+            response_modalities=["AUDIO"],
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                        voice_name=gemini_voice
+                    )
+                )
+            )
+        )
+
+        print(f"[DEBUG] GenAI TTS: model={model_name}, voice={gemini_voice}, "
+              f"chars={len(text)}, prompt={'yes' if style_prompt else 'no'}")
+
+        response = client.models.generate_content(
+            model=model_name,
+            contents=contents,
+            config=config,
+        )
+
+        # Extract audio from response / ดึงเสียงจาก response
+        if (response.candidates and
+                response.candidates[0].content and
+                response.candidates[0].content.parts):
+            part = response.candidates[0].content.parts[0]
+            if hasattr(part, 'inline_data') and part.inline_data:
+                audio_data = part.inline_data.data
+                mime_type = getattr(part.inline_data, 'mime_type', None) or "audio/wav"
+
+                if not audio_data:
+                    return None, "GenAI TTS returned empty audio"
+
+                # Convert raw PCM to WAV if needed
+                # แปลง PCM เป็น WAV ถ้าจำเป็น
+                if 'pcm' in mime_type.lower() or 'l16' in mime_type.lower():
+                    sample_rate = 24000
+                    if 'rate=' in mime_type:
+                        try:
+                            rate_str = mime_type.split('rate=')[1].split(';')[0].split(',')[0]
+                            sample_rate = int(rate_str)
+                        except (ValueError, IndexError):
+                            pass
+                    audio_data = _pcm_to_wav(audio_data, sample_rate=sample_rate)
+
+                print(f"[DEBUG] GenAI TTS success: {len(audio_data)} bytes "
+                      f"(mime={mime_type})")
+                return audio_data, None
+
+        return None, "GenAI TTS returned no audio content"
+
+    except Exception as e:
+        error_msg = str(e)
+        print(f"[ERROR] GenAI TTS failed: {error_msg}")
+        return None, f"GenAI TTS failed: {error_msg[:100]}"
+
+
 def synthesize_speech(text: str, model_name: str = None, style_prompt: str = None) -> tuple:
     """
     Synthesize speech from text using Google Cloud Text-to-Speech.
@@ -311,6 +433,14 @@ def synthesize_speech(text: str, model_name: str = None, style_prompt: str = Non
     if len(text) > max_chars:
         text = text[:max_chars]
         print(f"[WARNING] Text truncated to {max_chars} chars for TTS")
+
+    # For Gemini TTS models, try GenAI SDK first (most reliable, no library version issues)
+    # สำหรับโมเดล Gemini TTS ลองใช้ GenAI SDK ก่อน (เสถียรที่สุด ไม่มีปัญหาเวอร์ชัน library)
+    if model_name and model_name in TTS_ALLOWED_MODELS:
+        audio_bytes, genai_error = _synthesize_speech_genai(text, model_name, style_prompt)
+        if audio_bytes:
+            return audio_bytes, None
+        print(f"[WARNING] GenAI TTS failed: {genai_error}. Falling back to Cloud TTS API.")
 
     # Get TTS client / รับ TTS client
     client = get_tts_client()
@@ -383,8 +513,9 @@ def synthesize_speech(text: str, model_name: str = None, style_prompt: str = Non
             volume_gain_db=TTS_VOLUME_GAIN_DB,
         )
 
-        print(f"[DEBUG] Synthesizing {len(text)} chars to speech "
-              f"(model={model_name or 'classic'}, prompt={'yes' if style_prompt else 'no'})")
+        print(f"[DEBUG] Cloud TTS: synthesizing {len(text)} chars "
+              f"(model={model_name or 'classic'}, voice={voice_params.get('name', 'default')}, "
+              f"prompt={'yes' if style_prompt else 'no'})")
 
         # Perform synthesis / ดำเนินการสังเคราะห์เสียง
         response = client.synthesize_speech(
@@ -395,8 +526,10 @@ def synthesize_speech(text: str, model_name: str = None, style_prompt: str = Non
 
         # Return audio content / คืนค่าเนื้อหา audio
         if response.audio_content:
+            print(f"[DEBUG] Cloud TTS success: {len(response.audio_content)} bytes")
             return response.audio_content, None
         else:
+            print(f"[WARNING] Cloud TTS returned empty audio content")
             return None, ERROR_TTS_FAILED
 
     except Exception as e:

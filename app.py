@@ -63,6 +63,7 @@ from voice_config import (
 from voice_service import (
     transcribe_audio,
     synthesize_speech,
+    detect_audio_mime,
     is_voice_service_available,
 )
 
@@ -596,6 +597,10 @@ def initialize_session_state():
     if 'tts_audio_b64_by_msg' not in st.session_state:
         st.session_state.tts_audio_b64_by_msg = {}
 
+    # MIME type per message for correct audio playback (audio/mpeg or audio/wav)
+    if 'tts_audio_mime_by_msg' not in st.session_state:
+        st.session_state.tts_audio_mime_by_msg = {}
+
     # One-shot autoplay flag: set when new audio arrives, cleared after render
     if 'autoplay_tts_msg_idx' not in st.session_state:
         st.session_state.autoplay_tts_msg_idx = None
@@ -1066,8 +1071,9 @@ def page_chat():
             msg_index = len(st.session_state.chat_history) - 1
             audio_bytes = st.session_state.pending_ai_audio
 
-            # Store raw bytes
+            # Store raw bytes and detect MIME type
             st.session_state.tts_audio_by_msg[msg_index] = audio_bytes
+            st.session_state.tts_audio_mime_by_msg[msg_index] = detect_audio_mime(audio_bytes)
 
             # Store base64 encoded for HTML playback
             audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
@@ -1136,6 +1142,7 @@ def page_chat():
             if has_audio:
                 # Message with speaker icon for replay using components.html for JavaScript
                 audio_b64 = st.session_state.tts_audio_b64_by_msg[idx]
+                audio_mime = st.session_state.tts_audio_mime_by_msg.get(idx, 'audio/mpeg')
                 msg_content = message['content']
                 # Calculate height: base 50px + ~18px per 100 chars
                 estimated_lines = max(1, len(msg_content) // 100 + 1)
@@ -1150,7 +1157,7 @@ def page_chat():
                             flex: 1; color: #37474f; font-size: 14px; line-height: 1.4; max-width: calc(100% - 40px);'>
                             <b style='color: #2c5f7d;'>Patient:</b> {msg_content}
                         </div>
-                        <button onclick="new Audio('data:audio/mpeg;base64,{audio_b64}').play()"
+                        <button onclick="new Audio('data:{audio_mime};base64,{audio_b64}').play()"
                             style='background: #4a90a4; color: white; border: none; border-radius: 50%;
                             width: 28px; height: 28px; cursor: pointer; font-size: 12px; margin-top: 4px;
                             box-shadow: 0 2px 4px rgba(0,0,0,0.2); flex-shrink: 0;'
@@ -1546,10 +1553,11 @@ def page_chat():
                 msg_idx = st.session_state.autoplay_tts_msg_idx
                 if msg_idx in st.session_state.tts_audio_b64_by_msg:
                     audio_b64 = st.session_state.tts_audio_b64_by_msg[msg_idx]
+                    audio_mime = st.session_state.tts_audio_mime_by_msg.get(msg_idx, 'audio/mpeg')
                     # Render hidden autoplay audio via components.html
                     # This plays once and doesn't show any UI
                     components.html(
-                        f'<audio autoplay style="display:none"><source src="data:audio/mpeg;base64,{audio_b64}" type="audio/mpeg"></audio>',
+                        f'<audio autoplay style="display:none"><source src="data:{audio_mime};base64,{audio_b64}" type="{audio_mime}"></audio>',
                         height=0
                     )
                 # Clear the flag immediately after rendering to prevent replay on rerun
