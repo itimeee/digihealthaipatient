@@ -31,7 +31,6 @@ from voice_config import (
     TTS_PITCH,
     TTS_AUDIO_ENCODING,
     TTS_VOLUME_GAIN_DB,
-    TTS_DOCTOR_FIX,
     TTS_MODEL_NAME,
     TTS_STYLE_PROMPT,
     TTS_ALLOWED_MODELS,
