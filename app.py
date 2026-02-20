@@ -56,10 +56,17 @@ from voice_config import (
     STATUS_GENERATING_TTS,
     TTS_AUTO_PLAY,
     VOICE_SAMPLE_RATE,
+    TTS_MODEL_NAME,
+    TTS_VOICE_NAME,
+    TTS_STYLE_PROMPT,
+    TTS_ALLOWED_MODELS,
+    TTS_CLOUD_VOICE_OPTIONS,
+    TTS_CLOUD_DEFAULT_VOICE_BY_MODEL,
 )
 from voice_service import (
     transcribe_audio,
     synthesize_speech,
+    detect_audio_mime,
     is_voice_service_available,
 )
 
@@ -389,11 +396,23 @@ def get_ai_response_sync(chat_history, case_context):
     Returns:
         AI response text or fallback message
     """
+    request_started_at = time.perf_counter()
+    raw_model = "unknown"
+    case_model = "unknown"
+
+    def _log_ai_perf(status: str):
+        elapsed_sec = time.perf_counter() - request_started_at
+        print(
+            f"[PERF] Patient response generation: {elapsed_sec:.2f}s "
+            f"(model={case_model}, raw_model={raw_model}, status={status}, turns={len(chat_history)})"
+        )
+
     try:
         # Validate client first / ตรวจสอบ client ก่อน
         is_valid, error_msg = validate_genai_client()
         if not is_valid:
             st.session_state.last_model_error = error_msg
+            _log_ai_perf("client_unavailable")
             return f"AI model is not available: {error_msg}"
 
         # Get case-specific model, prompt, and temperature from session state
@@ -428,6 +447,7 @@ def get_ai_response_sync(chat_history, case_context):
             )
 
             if response_text and response_text.strip():
+                _log_ai_perf("success_attempt_1")
                 return sanitize_patient_output(response_text.strip())
 
         except ValueError as e:
@@ -457,10 +477,12 @@ def get_ai_response_sync(chat_history, case_context):
                     )
 
                     if response_text and response_text.strip():
+                        _log_ai_perf("success_attempt_2")
                         return sanitize_patient_output(response_text.strip())
 
                 except ValueError:
                     print("[DEBUG] Second attempt also failed. Returning fallback.")
+                    _log_ai_perf("fallback_safety_after_retry")
                     return FALLBACK_RESPONSE_SAFETY
 
             # Store error for debugging / เก็บ error สำหรับ debug
@@ -468,17 +490,21 @@ def get_ai_response_sync(chat_history, case_context):
 
             # Check if it's a model name issue / ตรวจสอบว่าเป็นปัญหาชื่อโมเดลหรือไม่
             if "not found" in error_str.lower() or "invalid" in error_str.lower():
+                _log_ai_perf("invalid_or_missing_model")
                 return f"โมเดล AI ไม่พร้อมใช้งาน: {case_model} อาจไม่รองรับ กรุณาตรวจสอบการตั้งค่า"
 
+            _log_ai_perf("fallback_generic_after_error")
             return FALLBACK_RESPONSE_GENERIC
 
         # If we get here with empty response / ถ้ามาถึงตรงนี้พร้อมคำตอบว่าง
+        _log_ai_perf("fallback_empty")
         return FALLBACK_RESPONSE_EMPTY
 
     except Exception as e:
         error_msg = str(e)
         st.session_state.last_model_error = error_msg
         print(f"[ERROR] get_ai_response_sync failed: {error_msg}")
+        _log_ai_perf("exception")
         return FALLBACK_RESPONSE_GENERIC
 
 
@@ -593,6 +619,10 @@ def initialize_session_state():
     if 'tts_audio_b64_by_msg' not in st.session_state:
         st.session_state.tts_audio_b64_by_msg = {}
 
+    # MIME type per message for correct audio playback (audio/mpeg or audio/wav)
+    if 'tts_audio_mime_by_msg' not in st.session_state:
+        st.session_state.tts_audio_mime_by_msg = {}
+
     # One-shot autoplay flag: set when new audio arrives, cleared after render
     if 'autoplay_tts_msg_idx' not in st.session_state:
         st.session_state.autoplay_tts_msg_idx = None
@@ -670,6 +700,20 @@ def initialize_session_state():
 
     if 'formulation_clear_pending' not in st.session_state:
         st.session_state.formulation_clear_pending = False
+
+    # TTS model selection state / สถานะการเลือกโมเดล TTS
+    if 'tts_model' not in st.session_state:
+        st.session_state.tts_model = TTS_MODEL_NAME
+    elif st.session_state.tts_model not in TTS_ALLOWED_MODELS:
+        # Reset stale/legacy values to current default
+        # รีเซ็ตค่าโมเดลเก่าที่ไม่อยู่ในรายการให้กลับเป็นค่าเริ่มต้นปัจจุบัน
+        st.session_state.tts_model = TTS_MODEL_NAME
+
+    if 'tts_voice' not in st.session_state:
+        st.session_state.tts_voice = TTS_VOICE_NAME
+
+    if 'tts_prompt' not in st.session_state:
+        st.session_state.tts_prompt = TTS_STYLE_PROMPT
 
 
 # ============================================================================
@@ -902,6 +946,80 @@ def page_pre_brief():
     else:
         st.success("✅ **Text Mode selected.** You will type your questions and the AI patient will respond in text. Click 'Start Case' when you're ready to begin the interview.")
 
+    # TTS Model Selection (shown when voice mode is selected)
+    # การเลือกโมเดล TTS (แสดงเมื่อเลือก voice mode)
+    if st.session_state.selected_mode == 'voice':
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander("🔊 TTS Settings / ตั้งค่าเสียง", expanded=False):
+            # Model dropdown / เลือกโมเดล
+            tts_model_options = TTS_ALLOWED_MODELS
+            tts_model_labels = {
+                "google-cloud-neural2": "google-cloud-neural2 (Natural, balanced)",
+                "google-cloud-standard": "google-cloud-standard (Fastest/lowest cost)",
+                "google-cloud-chirp3-hd": "google-cloud-chirp3-hd (Most realistic)",
+                "gemini-2.5-flash-preview-tts": "gemini-2.5-flash-preview-tts",
+                "gemini-2.5-pro-preview-tts": "gemini-2.5-pro-preview-tts",
+                "gemini-2.5-flash-lite-preview-tts": "gemini-2.5-flash-lite-preview-tts",
+            }
+            current_model_index = 0
+            if st.session_state.tts_model in tts_model_options:
+                current_model_index = tts_model_options.index(st.session_state.tts_model)
+
+            selected_model = st.selectbox(
+                "TTS Model / โมเดลเสียง",
+                options=tts_model_options,
+                index=current_model_index,
+                key="tts_model_select",
+                format_func=lambda m: tts_model_labels.get(m, m),
+                help="Select the Text-to-Speech model. "
+                     "google-cloud-neural2 is a balanced default. "
+                     "google-cloud-standard is lowest latency/cost. "
+                     "google-cloud-chirp3-hd is usually the most realistic. "
+                     "gemini-2.5-flash-preview-tts balances speed and quality. "
+                     "gemini-2.5-pro-preview-tts offers highest quality. "
+                     "gemini-2.5-flash-lite-preview-tts is the fastest.",
+            )
+            st.session_state.tts_model = selected_model
+
+            # Cloud voice selection / เลือกเสียงสำหรับ Cloud TTS
+            is_cloud_tts = selected_model.startswith("google-cloud-")
+            if is_cloud_tts:
+                voice_options = TTS_CLOUD_VOICE_OPTIONS.get(selected_model, [])
+                default_voice = TTS_CLOUD_DEFAULT_VOICE_BY_MODEL.get(selected_model, TTS_VOICE_NAME)
+                if not voice_options:
+                    voice_options = [default_voice]
+
+                current_voice = st.session_state.get("tts_voice", default_voice)
+                if current_voice not in voice_options:
+                    current_voice = default_voice
+
+                selected_voice = st.selectbox(
+                    "Cloud Voice / เสียง Cloud",
+                    options=voice_options,
+                    index=voice_options.index(current_voice),
+                    help="Select a Google Cloud TTS voice for the selected Cloud model.",
+                )
+                st.session_state.tts_voice = selected_voice
+            else:
+                # Keep previous cloud voice selection for future use
+                # คงค่าเสียง Cloud เดิมไว้สำหรับครั้งถัดไป
+                st.session_state.tts_voice = st.session_state.get("tts_voice", TTS_VOICE_NAME)
+
+            # Style prompt / คำสั่งสไตล์
+            is_gemini_tts = selected_model.startswith("gemini-")
+            style_prompt = st.text_input(
+                "Style Prompt (optional) / คำสั่งสไตล์ (ถ้าต้องการ)",
+                value=st.session_state.tts_prompt,
+                key="tts_prompt_input",
+                placeholder="e.g. Speak in a calm, gentle tone like a patient.",
+                help="Guide the speaking style of the generated audio for Gemini TTS models. "
+                     "Ignored when using Google Cloud TTS models.",
+                disabled=not is_gemini_tts,
+            )
+            if not is_gemini_tts:
+                st.caption("Style prompt ใช้กับ Gemini TTS เท่านั้น (Google Cloud TTS จะไม่ใช้ prompt นี้)")
+            st.session_state.tts_prompt = style_prompt
+
     st.markdown("<br>", unsafe_allow_html=True)
 
     # Callback function for Start Case button / ฟังก์ชันสำหรับปุ่มเริ่มเคส
@@ -1022,8 +1140,9 @@ def page_chat():
             msg_index = len(st.session_state.chat_history) - 1
             audio_bytes = st.session_state.pending_ai_audio
 
-            # Store raw bytes
+            # Store raw bytes and detect MIME type
             st.session_state.tts_audio_by_msg[msg_index] = audio_bytes
+            st.session_state.tts_audio_mime_by_msg[msg_index] = detect_audio_mime(audio_bytes)
 
             # Store base64 encoded for HTML playback
             audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
@@ -1092,6 +1211,7 @@ def page_chat():
             if has_audio:
                 # Message with speaker icon for replay using components.html for JavaScript
                 audio_b64 = st.session_state.tts_audio_b64_by_msg[idx]
+                audio_mime = st.session_state.tts_audio_mime_by_msg.get(idx, 'audio/mpeg')
                 msg_content = message['content']
                 # Calculate height: base 50px + ~18px per 100 chars
                 estimated_lines = max(1, len(msg_content) // 100 + 1)
@@ -1106,7 +1226,7 @@ def page_chat():
                             flex: 1; color: #37474f; font-size: 14px; line-height: 1.4; max-width: calc(100% - 40px);'>
                             <b style='color: #2c5f7d;'>Patient:</b> {msg_content}
                         </div>
-                        <button onclick="new Audio('data:audio/mpeg;base64,{audio_b64}').play()"
+                        <button onclick="new Audio('data:{audio_mime};base64,{audio_b64}').play()"
                             style='background: #4a90a4; color: white; border: none; border-radius: 50%;
                             width: 28px; height: 28px; cursor: pointer; font-size: 12px; margin-top: 4px;
                             box-shadow: 0 2px 4px rgba(0,0,0,0.2); flex-shrink: 0;'
@@ -1307,24 +1427,59 @@ def page_chat():
                 st.session_state.voice_text_value = ""
                 st.session_state.voice_send_pending = False
 
+                # Capture TTS settings before thread starts (thread-safe)
+                # บันทึกค่า TTS settings ก่อนเริ่ม thread (thread-safe)
+                tts_model_for_request = st.session_state.get('tts_model', TTS_MODEL_NAME)
+                tts_voice_for_request = st.session_state.get('tts_voice', TTS_VOICE_NAME)
+                tts_prompt_for_request = st.session_state.get('tts_prompt', TTS_STYLE_PROMPT)
+
                 # Start AI response thread
                 def ai_response_callback_voice():
                     """Background thread function to get AI response with TTS"""
+                    round_started_at = time.perf_counter()
+
+                    ai_started_at = time.perf_counter()
                     response = get_ai_response_threaded(
                         st.session_state.chat_history,
                         st.session_state.case_context
                     )
+                    ai_elapsed_sec = time.perf_counter() - ai_started_at
                     st.session_state.pending_ai_response = response
 
                     # Generate TTS for voice mode
+                    tts_elapsed_sec = 0.0
+                    tts_status = "skipped"
+                    tts_provider = "none"
                     if response and TTS_AUTO_PLAY:
                         st.session_state.voice_generating_tts = True
-                        audio_bytes_tts, tts_error = synthesize_speech(response)
+                        tts_started_at = time.perf_counter()
+                        audio_bytes_tts, tts_error = synthesize_speech(
+                            response,
+                            model_name=tts_model_for_request,
+                            voice_name=tts_voice_for_request,
+                            style_prompt=tts_prompt_for_request or None,
+                        )
+                        tts_elapsed_sec = time.perf_counter() - tts_started_at
                         st.session_state.voice_generating_tts = False
                         if audio_bytes_tts:
                             st.session_state.pending_ai_audio = audio_bytes_tts
+                            tts_status = "success"
+                            tts_provider = "genai_or_cloud"
                         else:
+                            tts_status = "failed"
+                            tts_provider = "genai_or_cloud"
                             print(f"[WARNING] TTS failed: {tts_error}")
+                    elif response and not TTS_AUTO_PLAY:
+                        tts_status = "disabled"
+
+                    total_elapsed_sec = time.perf_counter() - round_started_at
+                    print(
+                        f"[PERF] Voice round trip: {total_elapsed_sec:.2f}s "
+                        f"(ai={ai_elapsed_sec:.2f}s, tts={tts_elapsed_sec:.2f}s, "
+                        f"tts_status={tts_status}, tts_provider={tts_provider}, "
+                        f"tts_requested_model={tts_model_for_request}, "
+                        f"tts_requested_voice={tts_voice_for_request})"
+                    )
 
                     st.session_state.ai_response_ready = True
 
@@ -1493,10 +1648,11 @@ def page_chat():
                 msg_idx = st.session_state.autoplay_tts_msg_idx
                 if msg_idx in st.session_state.tts_audio_b64_by_msg:
                     audio_b64 = st.session_state.tts_audio_b64_by_msg[msg_idx]
+                    audio_mime = st.session_state.tts_audio_mime_by_msg.get(msg_idx, 'audio/mpeg')
                     # Render hidden autoplay audio via components.html
                     # This plays once and doesn't show any UI
                     components.html(
-                        f'<audio autoplay style="display:none"><source src="data:audio/mpeg;base64,{audio_b64}" type="audio/mpeg"></audio>',
+                        f'<audio autoplay style="display:none"><source src="data:{audio_mime};base64,{audio_b64}" type="{audio_mime}"></audio>',
                         height=0
                     )
                 # Clear the flag immediately after rendering to prevent replay on rerun
