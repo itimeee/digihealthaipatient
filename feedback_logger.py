@@ -78,7 +78,7 @@ def get_or_create_worksheet(spreadsheet, worksheet_name: str, headers: list):
             first_row = worksheet.row_values(1)
             if not first_row or first_row[0] == "":
                 # Empty worksheet, add headers / worksheet ว่าง เพิ่มหัวคอลัมน์
-                worksheet.update('A1', [headers])
+                worksheet.update(range_name='A1', values=[headers])
                 print(f"[INFO] Added headers to existing worksheet: {worksheet_name}")
                 return worksheet, headers
             else:
@@ -89,7 +89,7 @@ def get_or_create_worksheet(spreadsheet, worksheet_name: str, headers: list):
                 if missing_headers:
                     # Append missing headers to the end / เพิ่ม header ที่ขาดไปต่อท้าย
                     new_headers = existing_headers + missing_headers
-                    worksheet.update('A1', [new_headers])
+                    worksheet.update(range_name='A1', values=[new_headers])
                     print(f"[INFO] Updated headers in {worksheet_name}, added: {missing_headers}")
                     return worksheet, new_headers
 
@@ -97,7 +97,7 @@ def get_or_create_worksheet(spreadsheet, worksheet_name: str, headers: list):
 
         except Exception:
             # Worksheet exists but empty, add headers / worksheet มีอยู่แต่ว่าง เพิ่มหัวคอลัมน์
-            worksheet.update('A1', [headers])
+            worksheet.update(range_name='A1', values=[headers])
             return worksheet, headers
 
     except gspread.WorksheetNotFound:
@@ -109,7 +109,7 @@ def get_or_create_worksheet(spreadsheet, worksheet_name: str, headers: list):
             cols=len(headers)
         )
         # Add headers / เพิ่มหัวคอลัมน์
-        worksheet.update('A1', [headers])
+        worksheet.update(range_name='A1', values=[headers])
         return worksheet, headers
 
 
@@ -192,7 +192,7 @@ def append_session_to_feedback_sheet(
     """
     try:
         # Authorize and open spreadsheet / ยืนยันตัวตนและเปิด spreadsheet
-        gc = gspread.authorize(credentials)
+        gc = gspread.Client(auth=credentials)
         spreadsheet = gc.open_by_key(FEEDBACK_SHEET_ID)
 
         # === SESSIONS WORKSHEET ===
