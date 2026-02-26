@@ -135,7 +135,7 @@ def save_session_to_sheet(user_name, user_email, chat_history, case_name=None, m
             return False
 
         # Connect to Google Sheets / เชื่อมต่อ Google Sheets
-        gc = gspread.authorize(credentials)
+        gc = gspread.Client(auth=credentials)
 
         # Open the existing spreadsheet / เปิดสเปรดชีทที่มีอยู่
         spreadsheet = gc.open_by_key(GOOGLE_SHEET_ID)
@@ -166,11 +166,11 @@ def save_session_to_sheet(user_name, user_email, chat_history, case_name=None, m
                 try:
                     case_idx = current_headers.index("Case Name")
                     new_headers = current_headers[:case_idx+1] + ["Mode"] + current_headers[case_idx+1:]
-                    worksheet.update('A1', [new_headers])
+                    worksheet.update(range_name='A1', values=[new_headers])
                 except ValueError:
                     # Case Name not found, append Mode at end
                     new_headers = current_headers + ["Mode"]
-                    worksheet.update('A1', [new_headers])
+                    worksheet.update(range_name='A1', values=[new_headers])
 
         # Prepare rows to append / เตรียมแถวที่จะเพิ่ม
         rows_to_add = []
@@ -229,7 +229,7 @@ def save_latest_session(user_name, user_email, chat_history, case_name=None, mod
             return False
 
         # Connect to Google Sheets / เชื่อมต่อ Google Sheets
-        gc = gspread.authorize(credentials)
+        gc = gspread.Client(auth=credentials)
 
         # Open the latest session spreadsheet / เปิดสเปรดชีทเซสชันล่าสุด
         spreadsheet = gc.open_by_key(GOOGLE_SHEET_LATEST_ID)
@@ -268,7 +268,7 @@ def save_latest_session(user_name, user_email, chat_history, case_name=None, mod
             all_rows.append(row)
 
         # Write all rows at once / เขียนทุกแถวพร้อมกัน
-        worksheet.update('A1', all_rows)
+        worksheet.update(range_name='A1', values=all_rows)
 
         return True
 
@@ -292,7 +292,7 @@ def get_latest_session_data():
             return []
 
         # Connect to Google Sheets / เชื่อมต่อ Google Sheets
-        gc = gspread.authorize(credentials)
+        gc = gspread.Client(auth=credentials)
 
         # Open the latest session spreadsheet / เปิดสเปรดชีทเซสชันล่าสุด
         spreadsheet = gc.open_by_key(GOOGLE_SHEET_LATEST_ID)
