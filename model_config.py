@@ -34,12 +34,17 @@ DEFAULT_CASE_MAX_TOKENS = 2048
 MODEL_NAME_MAPPING = {
     # Legacy models only - modern models are kept as-is
     "gemini-pro": "gemini-1.5-pro",
+    # Alias mapping for Gemini 3.1 Pro on Gemini API
+    "gemini-3.1-pro": "gemini-3.1-pro-preview",
 }
 
 # List of known valid model names (for validation)
 # รายชื่อโมเดลที่ถูกต้อง (สำหรับการตรวจสอบ)
 # Updated January 2025 - https://ai.google.dev/gemini-api/docs/models
 VALID_MODEL_NAMES = [
+    # Gemini 3.1 (Preview)
+    "gemini-3.1-pro-preview",
+
     # Gemini 3.1 (Stable)
     "gemini-3.1-pro",
 
