@@ -40,7 +40,10 @@ MODEL_NAME_MAPPING = {
 # รายชื่อโมเดลที่ถูกต้อง (สำหรับการตรวจสอบ)
 # Updated January 2025 - https://ai.google.dev/gemini-api/docs/models
 VALID_MODEL_NAMES = [
-    # Gemini 3 (Preview) - Latest 2025
+    # Gemini 3.1 (Stable)
+    "gemini-3.1-pro",
+
+    # Gemini 3 (Preview) - 2025
     "gemini-3-flash-preview",
     "gemini-3-pro-preview",
 
