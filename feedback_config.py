@@ -12,9 +12,9 @@ Edit these values to customize the feedback behavior without modifying app.py.
 # GEMINI MODEL SETTINGS / การตั้งค่าโมเดล Gemini
 # =============================================================================
 
-# Primary model for feedback generation (Gemini 3 Pro for deep thinking)
-# โมเดลหลักสำหรับสร้าง feedback (Gemini 3 Pro สำหรับการคิดวิเคราะห์เชิงลึก)
-FEEDBACK_MODEL_NAME = "gemini-3-pro-preview"
+# Primary model for feedback generation (Gemini 3.1 Pro for deep thinking)
+# โมเดลหลักสำหรับสร้าง feedback (Gemini 3.1 Pro สำหรับการคิดวิเคราะห์เชิงลึก)
+FEEDBACK_MODEL_NAME = "gemini-3.1-pro"
 
 # Fallback model when primary model fails (Gemini 2.5 Pro)
 # โมเดลสำรองเมื่อโมเดลหลักล้มเหลว (Gemini 2.5 Pro)
@@ -25,7 +25,7 @@ FEEDBACK_FALLBACK_MODEL = "gemini-2.5-pro"
 FEEDBACK_TEMPERATURE = 0.25
 
 # Max tokens for response / จำนวน token สูงสุดสำหรับคำตอบ
-FEEDBACK_MAX_TOKENS = 8192
+FEEDBACK_MAX_TOKENS = 20000
 
 # =============================================================================
 # THINKING CONFIG / การตั้งค่าการคิดวิเคราะห์
