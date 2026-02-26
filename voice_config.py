@@ -47,17 +47,17 @@ TTS_LANGUAGE_CODE = "th-TH"
 TTS_VOICE_NAME = "th-TH-Neural2-C"
 
 # TTS Model selection / เลือกโมเดล TTS
-# Google Cloud TTS (Neural2) is the default and primary TTS path.
-# Google Cloud TTS (Neural2) เป็นค่าเริ่มต้นและเส้นทางหลักของ TTS
+# Gemini 2.5 Flash Lite TTS is the default model.
+# Gemini 2.5 Flash Lite TTS เป็นโมเดลค่าเริ่มต้น
 # Supported models / โมเดลที่รองรับ:
-#   - "google-cloud-neural2": Use Google Cloud TTS with Neural2 voice (default)
+#   - "google-cloud-neural2": Use Google Cloud TTS with Neural2 voice
 #   - "google-cloud-standard": Use Google Cloud TTS with Standard voice
 #   - "google-cloud-chirp3-hd": Use Google Cloud Chirp 3 HD voices (more realistic)
 #   - "gemini-2.5-flash-preview-tts": Fast, high-quality
 #   - "gemini-2.5-pro-preview-tts": Highest quality, slower
 #   - "gemini-2.5-flash-lite-preview-tts": Lightweight, fastest
 #   - "" (empty): Use classic Google Cloud TTS (no model_name param)
-TTS_MODEL_NAME = "google-cloud-neural2"
+TTS_MODEL_NAME = "gemini-2.5-flash-lite-preview-tts"
 
 # Allowed TTS models for validation / โมเดล TTS ที่อนุญาตสำหรับการตรวจสอบ
 TTS_ALLOWED_MODELS = [
