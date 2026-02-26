@@ -2,10 +2,10 @@
 Feedback Service / บริการสร้าง Feedback
 ========================================
 This module handles the generation of feedback using Gemini AI models.
-Uses Gemini 3 Pro (primary) with deep thinking for comprehensive evaluation.
+Uses Gemini 3.1 Pro (primary) with deep thinking for comprehensive evaluation.
 
 โมดูลนี้จัดการการสร้าง feedback โดยใช้โมเดล Gemini AI
-ใช้ Gemini 3 Pro (หลัก) พร้อมการคิดวิเคราะห์เชิงลึกสำหรับการประเมินอย่างครอบคลุม
+ใช้ Gemini 3.1 Pro (หลัก) พร้อมการคิดวิเคราะห์เชิงลึกสำหรับการประเมินอย่างครอบคลุม
 """
 
 import json
@@ -290,10 +290,10 @@ def generate_feedback(payload: dict) -> dict:
     Main function to generate feedback using Gemini models.
     ฟังก์ชันหลักสำหรับสร้าง feedback โดยใช้โมเดล Gemini
 
-    Uses Gemini 3 Pro as primary with fallback to Gemini 2.5 Pro.
+    Uses Gemini 3.1 Pro as primary with fallback to Gemini 2.5 Pro.
     Both models use deep thinking for comprehensive analysis.
 
-    ใช้ Gemini 3 Pro เป็นหลักพร้อม fallback ไปยัง Gemini 2.5 Pro
+    ใช้ Gemini 3.1 Pro เป็นหลักพร้อม fallback ไปยัง Gemini 2.5 Pro
     ทั้งสองโมเดลใช้การคิดวิเคราะห์เชิงลึกสำหรับการวิเคราะห์อย่างครอบคลุม
 
     Args:
@@ -317,7 +317,7 @@ def generate_feedback(payload: dict) -> dict:
             "error_message": str (optional)
         }
     """
-    # Try primary model (Gemini 3 Pro) / ลองโมเดลหลัก (Gemini 3 Pro)
+    # Try primary model (Gemini 3.1 Pro) / ลองโมเดลหลัก (Gemini 3.1 Pro)
     print(f"[INFO] Trying primary model: {FEEDBACK_MODEL_NAME}")
     result = generate_feedback_gemini(payload, model_name=FEEDBACK_MODEL_NAME)
 
