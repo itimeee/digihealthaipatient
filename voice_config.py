@@ -42,9 +42,94 @@ TTS_LANGUAGE_CODE = "th-TH"
 
 # Voice name for TTS (optional - if None, uses default for language)
 # ชื่อเสียงสำหรับ TTS (ถ้าไม่กำหนด จะใช้ค่าเริ่มต้นของภาษา)
-# Thai voices: "th-TH-Standard-A" (female), "th-TH-Wavenet-A" (female, higher quality)
+# Thai voices: "th-TH-Neural2-C" (female, premium), "th-TH-Standard-A" (female)
 # Set to None to use the default voice for the language
-TTS_VOICE_NAME = "th-TH-Standard-A"
+TTS_VOICE_NAME = "th-TH-Neural2-C"
+
+# TTS Model selection / เลือกโมเดล TTS
+# Default model is Gemini 2.5 Flash Lite TTS via Cloud Text-to-Speech API.
+# โมเดลเริ่มต้นคือ Gemini 2.5 Flash Lite TTS ผ่าน Cloud Text-to-Speech API
+# Supported models / โมเดลที่รองรับ:
+#   - "gemini-2.5-flash-lite-preview-tts": Lightweight, fastest (default)
+#   - "google-cloud-neural2": Use Google Cloud TTS with Neural2 voice
+#   - "google-cloud-standard": Use Google Cloud TTS with Standard voice
+#   - "google-cloud-chirp3-hd": Use Google Cloud Chirp 3 HD voices (more realistic)
+#   - "gemini-2.5-flash-preview-tts": Fast, high-quality
+#   - "gemini-2.5-pro-preview-tts": Highest quality, slower
+#   - "" (empty): Use classic Google Cloud TTS (no model_name param)
+TTS_MODEL_NAME = "gemini-2.5-flash-lite-preview-tts"
+
+# Allowed TTS models for validation / โมเดล TTS ที่อนุญาตสำหรับการตรวจสอบ
+TTS_ALLOWED_MODELS = [
+    "gemini-2.5-flash-lite-preview-tts",
+    "google-cloud-neural2",
+    "google-cloud-standard",
+    "google-cloud-chirp3-hd",
+    "gemini-2.5-flash-preview-tts",
+    "gemini-2.5-pro-preview-tts",
+]
+
+# Default voice per Google Cloud TTS model / เสียงเริ่มต้นตามโมเดล Google Cloud TTS
+TTS_CLOUD_DEFAULT_VOICE_BY_MODEL = {
+    "google-cloud-neural2": "th-TH-Neural2-C",
+    "google-cloud-standard": "th-TH-Standard-A",
+    "google-cloud-chirp3-hd": "th-TH-Chirp3-HD-Kore",
+}
+
+# Selectable Thai Cloud voices grouped by model / รายชื่อเสียงไทยของ Cloud แยกตามโมเดล
+TTS_CLOUD_VOICE_OPTIONS = {
+    "google-cloud-neural2": [
+        "th-TH-Neural2-C",
+    ],
+    "google-cloud-standard": [
+        "th-TH-Standard-A",
+    ],
+    "google-cloud-chirp3-hd": [
+        "th-TH-Chirp3-HD-Achernar",
+        "th-TH-Chirp3-HD-Achird",
+        "th-TH-Chirp3-HD-Algenib",
+        "th-TH-Chirp3-HD-Algieba",
+        "th-TH-Chirp3-HD-Alnilam",
+        "th-TH-Chirp3-HD-Aoede",
+        "th-TH-Chirp3-HD-Autonoe",
+        "th-TH-Chirp3-HD-Callirrhoe",
+        "th-TH-Chirp3-HD-Charon",
+        "th-TH-Chirp3-HD-Despina",
+        "th-TH-Chirp3-HD-Enceladus",
+        "th-TH-Chirp3-HD-Erinome",
+        "th-TH-Chirp3-HD-Fenrir",
+        "th-TH-Chirp3-HD-Gacrux",
+        "th-TH-Chirp3-HD-Iapetus",
+        "th-TH-Chirp3-HD-Kore",
+        "th-TH-Chirp3-HD-Laomedeia",
+        "th-TH-Chirp3-HD-Leda",
+        "th-TH-Chirp3-HD-Orus",
+        "th-TH-Chirp3-HD-Puck",
+        "th-TH-Chirp3-HD-Pulcherrima",
+        "th-TH-Chirp3-HD-Rasalgethi",
+        "th-TH-Chirp3-HD-Sadachbia",
+        "th-TH-Chirp3-HD-Sadaltager",
+        "th-TH-Chirp3-HD-Schedar",
+        "th-TH-Chirp3-HD-Sulafat",
+        "th-TH-Chirp3-HD-Umbriel",
+        "th-TH-Chirp3-HD-Vindemiatrix",
+        "th-TH-Chirp3-HD-Zephyr",
+        "th-TH-Chirp3-HD-Zubenelgenubi",
+    ],
+}
+
+# Gemini TTS voice name (used when synthesizing via GenAI SDK)
+# ชื่อเสียงสำหรับ Gemini TTS (ใช้เมื่อสังเคราะห์ผ่าน GenAI SDK)
+# Available voices / เสียงที่มี: Zephyr, Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, Pegasus
+TTS_GEMINI_VOICE_NAME = "Kore"
+
+# TTS Style Prompt (optional) / คำสั่งสไตล์สำหรับ TTS (ถ้าต้องการ)
+# A text prompt that guides the speaking style of the generated audio.
+# ข้อความที่แนะนำสไตล์การพูดของเสียงที่สร้าง
+# Example: "Speak in a calm, gentle, and empathetic tone like a patient."
+# ตัวอย่าง: "Speak in a calm, gentle, and empathetic tone like a patient."
+# Leave empty to use the model's default style.
+TTS_STYLE_PROMPT = ""
 
 # Speaking rate (speed) - 0.25 to 4.0, where 1.0 is normal
 # อัตราการพูด (ความเร็ว) - 0.25 ถึง 4.0, โดย 1.0 คือปกติ
@@ -58,26 +143,13 @@ TTS_PITCH = 0.0
 # Options: "MP3", "LINEAR16", "OGG_OPUS"
 TTS_AUDIO_ENCODING = "MP3"
 
+# Per-request timeout for Cloud TTS API calls (seconds)
+# ระยะเวลา timeout ต่อคำขอ Cloud TTS API (วินาที)
+TTS_REQUEST_TIMEOUT_SEC = 30
+
 # Volume gain in dB (-96.0 to 16.0)
 # การเพิ่มเสียง (dB) (-96.0 ถึง 16.0)
 TTS_VOLUME_GAIN_DB = 0.0
-
-# TTS Text Normalization for Thai / การ normalize ข้อความภาษาไทยสำหรับ TTS
-# Fixes pronunciation issues like "หมอ" being spelled out as "หอ-มอ-ออ"
-# แก้ปัญหาการออกเสียงเช่น "หมอ" ถูกสะกดเป็น "หอ-มอ-ออ"
-#
-# Uses zero-width characters to change tokenization without changing visible text
-# ใช้ zero-width character เพื่อเปลี่ยน tokenization โดยไม่เปลี่ยนข้อความที่เห็น
-#
-# Options / ตัวเลือก:
-#   - None or "": Disabled, no normalization
-#   - "zwnj": Replace "หมอ" -> "ห\u200Cมอ" (Zero-Width Non-Joiner) [default]
-#   - "zwsp": Replace "หมอ" -> "ห\u200Bมอ" (Zero-Width Space)
-#
-# Only replaces standalone "หมอ", not compound words like "หมอฟัน", "หมอผี"
-# แทนเฉพาะคำว่า "หมอ" เดี่ยวๆ ไม่แทนคำประสม เช่น "หมอฟัน", "หมอผี"
-TTS_DOCTOR_FIX = "zwnj"
-
 
 # ============================================================================
 # GENERAL VOICE SETTINGS / การตั้งค่าเสียงทั่วไป
@@ -93,6 +165,26 @@ TTS_AUTO_PLAY = True
 # Maximum audio recording duration in seconds (for chunking if needed)
 # ความยาวสูงสุดของการบันทึกเสียง (วินาที)
 MAX_RECORDING_DURATION_SECONDS = 60
+
+# ============================================================================
+# STREAMING TTS CHUNKING / การแบ่งช่วงสำหรับ TTS แบบสตรีม
+# ============================================================================
+
+# Minimum characters before emitting a sentence chunk.
+# จำนวนตัวอักษรขั้นต่ำก่อนปล่อย chunk ประโยค
+STREAM_TTS_MIN_CHARS = 40
+
+# Target chunk size used for coalescing adjacent short segments.
+# ขนาดเป้าหมายของ chunk สำหรับรวมประโยคสั้นที่อยู่ติดกัน
+STREAM_TTS_TARGET_CHARS = 90
+
+# Maximum characters per chunk before fallback split.
+# จำนวนตัวอักษรสูงสุดต่อ chunk ก่อนบังคับตัด
+STREAM_TTS_MAX_CHARS = 220
+
+# Emit streaming TTS chunks only at sentence boundaries (more stable, higher latency).
+# ปล่อย chunk ของ Streaming TTS เฉพาะเมื่อจบประโยค (เสถียรกว่า แต่หน่วงขึ้น)
+STREAM_TTS_SENTENCE_ONLY = True
 
 
 # ============================================================================

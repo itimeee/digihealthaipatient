@@ -11,7 +11,9 @@ This module provides:
 """
 
 import os
+from typing import Iterator
 import streamlit as st
+from log_utils import log_event
 
 # Import google-genai SDK with helpful error message
 # นำเข้า google-genai SDK พร้อมข้อความ error ที่ช่วยแก้ปัญหา
@@ -54,7 +56,7 @@ def get_api_key() -> str:
             if api_key and str(api_key).strip():
                 return str(api_key).strip()
     except Exception as e:
-        print(f"[DEBUG] st.secrets direct access failed: {e}")
+        log_event("DEBUG", "genai_client", "secrets_direct_access_failed", error=str(e))
 
     try:
         # Method 2: Using .get()
@@ -62,7 +64,7 @@ def get_api_key() -> str:
         if api_key and str(api_key).strip():
             return str(api_key).strip()
     except Exception as e:
-        print(f"[DEBUG] st.secrets.get() failed: {e}")
+        log_event("DEBUG", "genai_client", "secrets_get_failed", error=str(e))
 
     # Fallback to environment variable / ใช้ environment variable แทน
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -106,10 +108,10 @@ def get_client() -> genai.Client:
     try:
         api_key = get_api_key()
         _client_instance = genai.Client(api_key=api_key)
-        print(f"[DEBUG] GenAI client initialized successfully")
+        log_event("INFO", "genai_client", "client_initialized")
         return _client_instance
     except Exception as e:
-        print(f"[ERROR] Failed to initialize GenAI client: {e}")
+        log_event("ERROR", "genai_client", "client_init_failed", error=str(e))
         raise ValueError(f"Failed to initialize GenAI client: {e}")
 
 
@@ -368,6 +370,88 @@ def generate_content_sync(
 
     except Exception as e:
         raise ValueError(f"Generation failed: {e}")
+
+
+def generate_content_stream_sync(
+    model: str,
+    contents: str,
+    temperature: float = 0.3,
+    max_output_tokens: int = 4096,
+    stop_sequences: list = None,
+    system_instruction: str = None,
+    thinking_config: "types.ThinkingConfig" = None,
+    response_mime_type: str = None,
+) -> Iterator[str]:
+    """
+    Generate content as a synchronous text stream (delta chunks).
+    สร้างเนื้อหาแบบ streaming synchronous (คืนค่าเป็นข้อความย่อยทีละส่วน)
+
+    Args:
+        model: Model name (e.g., "gemini-2.5-flash")
+        contents: Prompt/contents to send
+        temperature: Sampling temperature
+        max_output_tokens: Maximum tokens
+        stop_sequences: Stop sequences list
+        system_instruction: System instruction
+        thinking_config: ThinkingConfig for deep reasoning (Gemini 3/2.5 Pro)
+        response_mime_type: MIME type for response (e.g., "application/json")
+
+    Yields:
+        Text delta chunks from the streaming response
+
+    Raises:
+        ValueError: If generation fails
+    """
+    client = get_client()
+
+    config = build_generation_config(
+        temperature=temperature,
+        max_output_tokens=max_output_tokens,
+        stop_sequences=stop_sequences,
+        system_instruction=system_instruction,
+        thinking_config=thinking_config,
+        response_mime_type=response_mime_type,
+    )
+
+    try:
+        response_stream = client.models.generate_content_stream(
+            model=model,
+            contents=contents,
+            config=config,
+        )
+
+        emitted_any = False
+        accumulated_text = ""
+
+        for chunk in response_stream:
+            if is_response_blocked(chunk):
+                raise ValueError("Response blocked by safety filters")
+
+            chunk_text = extract_text(chunk)
+            if not chunk_text:
+                continue
+
+            # Handle both possible stream behaviors:
+            # 1) delta chunks ("hello", " world")
+            # 2) cumulative chunks ("hello", "hello world")
+            if accumulated_text and chunk_text.startswith(accumulated_text):
+                delta_text = chunk_text[len(accumulated_text):]
+                accumulated_text = chunk_text
+            else:
+                delta_text = chunk_text
+                accumulated_text += chunk_text
+
+            if not delta_text:
+                continue
+
+            emitted_any = True
+            yield delta_text
+
+        if not emitted_any:
+            raise ValueError("Empty response from model")
+
+    except Exception as e:
+        raise ValueError(f"Streaming generation failed: {e}")
 
 
 # =============================================================================

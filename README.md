@@ -92,6 +92,73 @@ TIMER_DURATION_MINUTES = 30
 case_history = """Edit the patient case details here..."""
 ```
 
+### TTS Model Selection
+
+The application supports selectable TTS (Text-to-Speech) models. The default path is Gemini 2.5 Flash Lite TTS. Configure defaults in `voice_config.py`:
+
+```python
+# Default TTS model (Gemini 2.5 Flash Lite TTS)
+TTS_MODEL_NAME = "gemini-2.5-flash-lite-preview-tts"
+TTS_VOICE_NAME = "th-TH-Neural2-C"
+
+# Optional style prompt to guide the speaking style
+TTS_STYLE_PROMPT = ""  # e.g. "Speak in a calm, gentle tone like a patient."
+```
+
+**Supported models:**
+
+| Model | Description |
+|-------|-------------|
+| `gemini-2.5-flash-lite-preview-tts` | Lightweight, fastest (default) |
+| `google-cloud-neural2` | Google Cloud TTS with `th-TH-Neural2-C` |
+| `google-cloud-standard` | Google Cloud TTS standard voice (`th-TH-Standard-A`) |
+| `google-cloud-chirp3-hd` | Google Cloud Chirp3 HD voices (most realistic) |
+| `gemini-2.5-flash-preview-tts` | Fast, high-quality (Gemini TTS) |
+| `gemini-2.5-pro-preview-tts` | Highest quality, slower |
+
+Users can also select the TTS model, Cloud voice, and Gemini style prompt from the **TTS Settings** panel in the Voice Mode pre-brief page before starting a case. In this app, Gemini TTS requests are forced through the Cloud Text-to-Speech API path.
+
+**Per-request override via `synthesize_speech()`:**
+
+```python
+from voice_service import synthesize_speech
+
+# Use default model from config
+audio, error = synthesize_speech("Hello world")
+
+# Override model and prompt for a single call
+audio, error = synthesize_speech(
+    "Hello world",
+    model_name="google-cloud-neural2",
+    voice_name="th-TH-Neural2-C",
+)
+
+# Chirp3 HD (more realistic Cloud TTS voice)
+audio, error = synthesize_speech(
+    "Hello world",
+    model_name="google-cloud-chirp3-hd",
+    voice_name="th-TH-Chirp3-HD-Kore",
+)
+
+# Gemini TTS override (style prompt applies to Gemini only)
+audio, error = synthesize_speech(
+    "Hello world",
+    model_name="gemini-2.5-pro-preview-tts",
+    style_prompt="Speak slowly and clearly.",
+)
+```
+
+### TTS Requirements
+
+To use Google Cloud TTS and optional Gemini TTS models, ensure the following:
+
+1. **Dependency**: `google-cloud-texttospeech>=2.29.0` (already set in `requirements.txt`)
+2. **API enabled**: Enable the **Cloud Text-to-Speech API** in your Google Cloud project
+3. **IAM permissions**: The service account needs:
+   - `roles/texttospeech.user` (or `textToSpeech.synthesize` permission)
+   - For Gemini TTS models, you may also need `aiplatform.endpoints.predict` permission
+4. **Billing**: Gemini TTS models require an active billing account on the GCP project
+
 ## Usage Guide
 
 ### For Students:

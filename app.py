@@ -11,7 +11,11 @@ from datetime import datetime
 import threading
 import time
 import re
+import json
+import base64
+import queue
 from streamlit.runtime.scriptrunner import add_script_run_ctx
+from log_utils import log_event, classify_tts_error
 
 # Import case configurations / นำเข้าการตั้งค่าเคส
 from cases import ALL_CASES, get_case_by_name
@@ -20,9 +24,7 @@ from cases import ALL_CASES, get_case_by_name
 from genai_client import (
     get_client,
     generate_content_sync,
-    extract_text,
-    is_response_blocked,
-    build_generation_config,
+    generate_content_stream_sync,
 )
 from model_config import (
     DEFAULT_CASE_MODEL,
@@ -58,10 +60,15 @@ from voice_config import (
     VOICE_SAMPLE_RATE,
     TTS_MODEL_NAME,
     TTS_VOICE_NAME,
+    TTS_GEMINI_VOICE_NAME,
     TTS_STYLE_PROMPT,
     TTS_ALLOWED_MODELS,
     TTS_CLOUD_VOICE_OPTIONS,
     TTS_CLOUD_DEFAULT_VOICE_BY_MODEL,
+    STREAM_TTS_MIN_CHARS,
+    STREAM_TTS_TARGET_CHARS,
+    STREAM_TTS_MAX_CHARS,
+    STREAM_TTS_SENTENCE_ONLY,
 )
 from voice_service import (
     transcribe_audio,
@@ -135,7 +142,7 @@ def save_session_to_sheet(user_name, user_email, chat_history, case_name=None, m
             return False
 
         # Connect to Google Sheets / เชื่อมต่อ Google Sheets
-        gc = gspread.Client(auth=credentials)
+        gc = gspread.authorize(credentials)
 
         # Open the existing spreadsheet / เปิดสเปรดชีทที่มีอยู่
         spreadsheet = gc.open_by_key(GOOGLE_SHEET_ID)
@@ -166,11 +173,11 @@ def save_session_to_sheet(user_name, user_email, chat_history, case_name=None, m
                 try:
                     case_idx = current_headers.index("Case Name")
                     new_headers = current_headers[:case_idx+1] + ["Mode"] + current_headers[case_idx+1:]
-                    worksheet.update(range_name='A1', values=[new_headers])
+                    worksheet.update('A1', [new_headers])
                 except ValueError:
                     # Case Name not found, append Mode at end
                     new_headers = current_headers + ["Mode"]
-                    worksheet.update(range_name='A1', values=[new_headers])
+                    worksheet.update('A1', [new_headers])
 
         # Prepare rows to append / เตรียมแถวที่จะเพิ่ม
         rows_to_add = []
@@ -229,7 +236,7 @@ def save_latest_session(user_name, user_email, chat_history, case_name=None, mod
             return False
 
         # Connect to Google Sheets / เชื่อมต่อ Google Sheets
-        gc = gspread.Client(auth=credentials)
+        gc = gspread.authorize(credentials)
 
         # Open the latest session spreadsheet / เปิดสเปรดชีทเซสชันล่าสุด
         spreadsheet = gc.open_by_key(GOOGLE_SHEET_LATEST_ID)
@@ -268,7 +275,7 @@ def save_latest_session(user_name, user_email, chat_history, case_name=None, mod
             all_rows.append(row)
 
         # Write all rows at once / เขียนทุกแถวพร้อมกัน
-        worksheet.update(range_name='A1', values=all_rows)
+        worksheet.update('A1', all_rows)
 
         return True
 
@@ -292,7 +299,7 @@ def get_latest_session_data():
             return []
 
         # Connect to Google Sheets / เชื่อมต่อ Google Sheets
-        gc = gspread.Client(auth=credentials)
+        gc = gspread.authorize(credentials)
 
         # Open the latest session spreadsheet / เปิดสเปรดชีทเซสชันล่าสุด
         spreadsheet = gc.open_by_key(GOOGLE_SHEET_LATEST_ID)
@@ -381,7 +388,126 @@ def sanitize_patient_output(text: str) -> str:
     return cleaned_text
 
 
-def get_ai_response_sync(chat_history, case_context):
+def extract_tts_ready_segments(text_buffer: str, force_flush: bool = False) -> tuple:
+    """
+    Split streaming text into sentence-like segments ready for TTS.
+    แยกข้อความสตรีมออกเป็นช่วงคล้ายประโยคที่พร้อมส่งเข้า TTS
+
+    Returns:
+        Tuple of (segments: list[str], remainder: str)
+    """
+    if not text_buffer:
+        return [], ""
+
+    min_chars = STREAM_TTS_MIN_CHARS
+    target_chars = STREAM_TTS_TARGET_CHARS
+    max_chars = STREAM_TTS_MAX_CHARS
+    sentence_only_mode = STREAM_TTS_SENTENCE_ONLY
+    sentence_delimiters = {".", "!", "?", "。", "！", "？", "\n", "…"}
+
+    segments = []
+    start_idx = 0
+    last_space_idx = -1
+
+    for idx, char in enumerate(text_buffer):
+        if char.isspace():
+            last_space_idx = idx
+
+        current_len = (idx + 1) - start_idx
+        cut_idx = None
+
+        # Prefer sentence boundaries when available.
+        if char in sentence_delimiters and current_len >= min_chars:
+            cut_idx = idx + 1
+        # Optionally allow whitespace-based chunking after target size.
+        elif not sentence_only_mode and char.isspace() and current_len >= target_chars:
+            cut_idx = idx + 1
+        # Hard split guard for very long text without clear boundaries.
+        elif current_len >= max_chars:
+            if last_space_idx >= (start_idx + min_chars - 1):
+                cut_idx = last_space_idx + 1
+            else:
+                cut_idx = idx + 1
+
+        if cut_idx is None:
+            continue
+
+        candidate = text_buffer[start_idx:cut_idx].strip()
+        if candidate:
+            segments.append(candidate)
+
+        start_idx = cut_idx
+        last_space_idx = -1
+
+    remainder = text_buffer[start_idx:]
+
+    if force_flush and remainder.strip():
+        tail = remainder.strip()
+        if len(tail) < min_chars and segments:
+            # Avoid tiny trailing TTS calls (e.g., 1-3 chars) by merging into last segment.
+            segments[-1] = f"{segments[-1]} {tail}".strip()
+        else:
+            segments.append(tail)
+        remainder = ""
+
+    # Coalesce adjacent short segments to reduce the number of TTS API calls.
+    coalesced_segments = []
+    for segment in segments:
+        clean_segment = segment.strip()
+        if not clean_segment:
+            continue
+
+        if not coalesced_segments:
+            coalesced_segments.append(clean_segment)
+            continue
+
+        last_segment = coalesced_segments[-1]
+        can_merge = (
+            len(last_segment) < target_chars
+            and (len(last_segment) + 1 + len(clean_segment)) <= max_chars
+        )
+        if can_merge:
+            coalesced_segments[-1] = f"{last_segment} {clean_segment}".strip()
+        else:
+            coalesced_segments.append(clean_segment)
+
+    return coalesced_segments, remainder
+
+
+def _generate_patient_response(
+    model_name: str,
+    prompt_text: str,
+    temperature: float,
+    stream_callback=None,
+) -> str:
+    """
+    Generate patient response either as blocking or streaming text.
+    สร้างคำตอบผู้ป่วยแบบ blocking หรือแบบ streaming
+    """
+    if stream_callback:
+        response_chunks = []
+        for delta_text in generate_content_stream_sync(
+            model=model_name,
+            contents=prompt_text,
+            temperature=temperature,
+            max_output_tokens=2048,
+            stop_sequences=PATIENT_STOP_SEQUENCES,
+        ):
+            if delta_text:
+                response_chunks.append(delta_text)
+                stream_callback(delta_text, False)
+        return "".join(response_chunks)
+
+    return generate_content_sync(
+        model=model_name,
+        contents=prompt_text,
+        temperature=temperature,
+        max_output_tokens=2048,
+        stop_sequences=PATIENT_STOP_SEQUENCES,
+    )
+
+
+def get_ai_response_sync(chat_history, case_context, stream_callback=None):
     """
     Get response from Gemini AI using case-specific configuration (sync).
     รับคำตอบจาก Gemini AI โดยใช้การตั้งค่าเฉพาะของเคส (แบบ sync)
@@ -392,6 +518,7 @@ def get_ai_response_sync(chat_history, case_context):
     Args:
         chat_history: List of previous messages / ประวัติการสนทนา
         case_context: Case information for context / ข้อมูลเคสสำหรับบริบท
+        stream_callback: callback(delta_text, reset) for partial UI updates
 
     Returns:
         AI response text or fallback message
@@ -402,9 +529,15 @@ def get_ai_response_sync(chat_history, case_context):
 
     def _log_ai_perf(status: str):
         elapsed_sec = time.perf_counter() - request_started_at
-        print(
-            f"[PERF] Patient response generation: {elapsed_sec:.2f}s "
-            f"(model={case_model}, raw_model={raw_model}, status={status}, turns={len(chat_history)})"
+        log_event(
+            "PERF",
+            "llm",
+            "response_generation",
+            elapsed_sec=elapsed_sec,
+            model=case_model,
+            raw_model=raw_model,
+            status=status,
+            turns=len(chat_history),
         )
 
     try:
@@ -422,7 +555,7 @@ def get_ai_response_sync(chat_history, case_context):
         case_prompt = st.session_state.get('case_system_prompt', 'You are a patient in a psychiatric clinic.')
         case_temperature = st.session_state.get('case_temperature', DEFAULT_CASE_TEMPERATURE)
 
-        print(f"[DEBUG] Using model: {case_model} (original: {raw_model})")
+        log_event("DEBUG", "llm", "model_selected", model=case_model, raw_model=raw_model)
 
         # Build the conversation prompt / สร้าง prompt การสนทนา
         full_prompt = f"{SAFE_SIMULATION_CONTEXT}\n\n{case_prompt}{STRICT_OUTPUT_RULES}\n\nCase Context:\n{case_context}\n\n"
@@ -438,12 +571,11 @@ def get_ai_response_sync(chat_history, case_context):
 
         # Attempt 1: Try with current prompt / พยายามครั้งที่ 1
         try:
-            response_text = generate_content_sync(
-                model=case_model,
-                contents=full_prompt,
+            response_text = _generate_patient_response(
+                model_name=case_model,
+                prompt_text=full_prompt,
                 temperature=case_temperature,
-                max_output_tokens=2048,
-                stop_sequences=PATIENT_STOP_SEQUENCES,
+                stream_callback=stream_callback,
             )
 
             if response_text and response_text.strip():
@@ -452,11 +584,15 @@ def get_ai_response_sync(chat_history, case_context):
 
         except ValueError as e:
             error_str = str(e)
-            print(f"[DEBUG] First attempt failed: {error_str}")
+            log_event("WARNING", "llm", "attempt_1_failed", error=error_str)
 
             # If blocked by safety, try safer prompt / ถ้าถูกบล็อก ลองใช้ prompt ที่ปลอดภัยกว่า
             if "blocked" in error_str.lower() or "safety" in error_str.lower():
-                print("[DEBUG] Trying safer prompt...")
+                log_event("INFO", "llm", "retry_safer_prompt")
+
+                if stream_callback:
+                    # Clear partial text from failed first attempt before retry.
+                    stream_callback("", True)
 
                 # Attempt 2: Retry with safer context / พยายามครั้งที่ 2
                 safer_prompt = f"{SAFER_CONTEXT}\n\n{case_prompt}{STRICT_OUTPUT_RULES}\n\nCase Context:\n{case_context}\n\n"
@@ -468,12 +604,11 @@ def get_ai_response_sync(chat_history, case_context):
                 safer_prompt += "Patient: "
 
                 try:
-                    response_text = generate_content_sync(
-                        model=case_model,
-                        contents=safer_prompt,
+                    response_text = _generate_patient_response(
+                        model_name=case_model,
+                        prompt_text=safer_prompt,
                         temperature=case_temperature,
-                        max_output_tokens=2048,
-                        stop_sequences=PATIENT_STOP_SEQUENCES,
+                        stream_callback=stream_callback,
                     )
 
                     if response_text and response_text.strip():
@@ -481,7 +616,7 @@ def get_ai_response_sync(chat_history, case_context):
                         return sanitize_patient_output(response_text.strip())
 
                 except ValueError:
-                    print("[DEBUG] Second attempt also failed. Returning fallback.")
+                    log_event("WARNING", "llm", "attempt_2_failed_fallback_safety")
                     _log_ai_perf("fallback_safety_after_retry")
                     return FALLBACK_RESPONSE_SAFETY
 
@@ -503,12 +638,12 @@ def get_ai_response_sync(chat_history, case_context):
     except Exception as e:
         error_msg = str(e)
         st.session_state.last_model_error = error_msg
-        print(f"[ERROR] get_ai_response_sync failed: {error_msg}")
+        log_event("ERROR", "llm", "response_sync_exception", error=error_msg)
         _log_ai_perf("exception")
         return FALLBACK_RESPONSE_GENERIC
 
 
-def get_ai_response_threaded(chat_history, case_context):
+def get_ai_response_threaded(chat_history, case_context, stream_callback=None):
     """
     Wrapper function to run AI response in a background thread.
     ฟังก์ชันห่อหุ้มเพื่อเรียก AI ในเธรดพื้นหลัง
@@ -522,11 +657,11 @@ def get_ai_response_threaded(chat_history, case_context):
     try:
         # Call sync function directly - no asyncio event loop needed
         # เรียกฟังก์ชัน sync โดยตรง - ไม่ต้องใช้ asyncio event loop
-        return get_ai_response_sync(chat_history, case_context)
+        return get_ai_response_sync(chat_history, case_context, stream_callback=stream_callback)
     except Exception as e:
         error_msg = str(e)
         st.session_state.last_model_error = error_msg
-        print(f"[ERROR] get_ai_response_threaded failed: {error_msg}")
+        log_event("ERROR", "llm", "response_threaded_exception", error=error_msg)
         return FALLBACK_RESPONSE_GENERIC
 
 
@@ -569,6 +704,14 @@ def initialize_session_state():
     if 'pending_ai_response' not in st.session_state:
         st.session_state.pending_ai_response = None
 
+    # Live streaming text state for in-progress AI response
+    if 'pending_ai_stream_text' not in st.session_state:
+        st.session_state.pending_ai_stream_text = ""
+
+    # Flag set by worker thread when new stream chunks arrive
+    if 'ai_stream_dirty' not in st.session_state:
+        st.session_state.ai_stream_dirty = False
+
     # Feedback form state / สถานะฟอร์ม feedback
     if 'provisional_dx' not in st.session_state:
         st.session_state.provisional_dx = ''
@@ -610,6 +753,13 @@ def initialize_session_state():
     if 'pending_ai_audio' not in st.session_state:
         st.session_state.pending_ai_audio = None
 
+    # Chunked TTS generated during streaming (current in-flight response)
+    if 'pending_ai_audio_chunks_b64' not in st.session_state:
+        st.session_state.pending_ai_audio_chunks_b64 = []
+
+    if 'pending_ai_audio_chunks_mime' not in st.session_state:
+        st.session_state.pending_ai_audio_chunks_mime = []
+
     # Dictionary to store TTS audio by message index for persistence across reruns
     # Dictionary เก็บ TTS audio ตาม index ของข้อความเพื่อคงอยู่ระหว่าง reruns
     if 'tts_audio_by_msg' not in st.session_state:
@@ -623,6 +773,23 @@ def initialize_session_state():
     if 'tts_audio_mime_by_msg' not in st.session_state:
         st.session_state.tts_audio_mime_by_msg = {}
 
+    # Chunked audio per assistant message (for replay of streamed TTS)
+    if 'tts_audio_chunks_b64_by_msg' not in st.session_state:
+        st.session_state.tts_audio_chunks_b64_by_msg = {}
+
+    if 'tts_audio_chunks_mime_by_msg' not in st.session_state:
+        st.session_state.tts_audio_chunks_mime_by_msg = {}
+
+    # Live queue for chunked autoplay while model is still responding
+    if 'live_tts_queue' not in st.session_state:
+        st.session_state.live_tts_queue = []
+
+    if 'voice_tts_round_id' not in st.session_state:
+        st.session_state.voice_tts_round_id = 0
+
+    if 'tts_stream_chunk_counter' not in st.session_state:
+        st.session_state.tts_stream_chunk_counter = 0
+
     # One-shot autoplay flag: set when new audio arrives, cleared after render
     if 'autoplay_tts_msg_idx' not in st.session_state:
         st.session_state.autoplay_tts_msg_idx = None
@@ -635,6 +802,9 @@ def initialize_session_state():
 
     if 'voice_generating_tts' not in st.session_state:
         st.session_state.voice_generating_tts = False
+
+    if 'voice_streaming_tts_active' not in st.session_state:
+        st.session_state.voice_streaming_tts_active = False
 
     if 'formulation_draft_text' not in st.session_state:
         st.session_state.formulation_draft_text = ''
@@ -710,7 +880,10 @@ def initialize_session_state():
         st.session_state.tts_model = TTS_MODEL_NAME
 
     if 'tts_voice' not in st.session_state:
-        st.session_state.tts_voice = TTS_VOICE_NAME
+        if str(st.session_state.tts_model).startswith("gemini-"):
+            st.session_state.tts_voice = TTS_GEMINI_VOICE_NAME
+        else:
+            st.session_state.tts_voice = TTS_VOICE_NAME
 
     if 'tts_prompt' not in st.session_state:
         st.session_state.tts_prompt = TTS_STYLE_PROMPT
@@ -959,7 +1132,7 @@ def page_pre_brief():
                 "google-cloud-chirp3-hd": "google-cloud-chirp3-hd (Most realistic)",
                 "gemini-2.5-flash-preview-tts": "gemini-2.5-flash-preview-tts",
                 "gemini-2.5-pro-preview-tts": "gemini-2.5-pro-preview-tts",
-                "gemini-2.5-flash-lite-preview-tts": "gemini-2.5-flash-lite-preview-tts",
+                "gemini-2.5-flash-lite-preview-tts": "gemini-2.5-flash-lite-preview-tts (default)",
             }
             current_model_index = 0
             if st.session_state.tts_model in tts_model_options:
@@ -972,7 +1145,7 @@ def page_pre_brief():
                 key="tts_model_select",
                 format_func=lambda m: tts_model_labels.get(m, m),
                 help="Select the Text-to-Speech model. "
-                     "google-cloud-neural2 is a balanced default. "
+                     "gemini-2.5-flash-lite-preview-tts is the default (fastest). "
                      "google-cloud-standard is lowest latency/cost. "
                      "google-cloud-chirp3-hd is usually the most realistic. "
                      "gemini-2.5-flash-preview-tts balances speed and quality. "
@@ -1001,9 +1174,9 @@ def page_pre_brief():
                 )
                 st.session_state.tts_voice = selected_voice
             else:
-                # Keep previous cloud voice selection for future use
-                # คงค่าเสียง Cloud เดิมไว้สำหรับครั้งถัดไป
-                st.session_state.tts_voice = st.session_state.get("tts_voice", TTS_VOICE_NAME)
+                # Gemini TTS voice is fixed to Gemini voice family.
+                # เสียงของ Gemini TTS ใช้ตระกูลเสียง Gemini โดยค่าเริ่มต้นเป็น Kore
+                st.session_state.tts_voice = TTS_GEMINI_VOICE_NAME
 
             # Style prompt / คำสั่งสไตล์
             is_gemini_tts = selected_model.startswith("gemini-")
@@ -1123,11 +1296,16 @@ def page_chat():
     # ========================================================================
     # Check if AI response is ready and process it immediately
     # ตรวจสอบว่า AI ตอบเสร็จแล้วและประมวลผลทันที
-    if st.session_state.ai_response_ready and st.session_state.pending_ai_response:
+    if st.session_state.ai_response_ready:
+        final_response = st.session_state.pending_ai_response
+        if not final_response:
+            streamed_fallback = st.session_state.get('pending_ai_stream_text', '').strip()
+            final_response = streamed_fallback if streamed_fallback else FALLBACK_RESPONSE_EMPTY
+
         # Sanitize and append AI response to history / ทำความสะอาดและเพิ่มคำตอบ AI ในประวัติ
         # Double-layer protection: sanitize again before saving to chat history
         # การป้องกันสองชั้น: ทำความสะอาดอีกครั้งก่อนบันทึกในประวัติแชท
-        sanitized_response = sanitize_patient_output(st.session_state.pending_ai_response)
+        sanitized_response = sanitize_patient_output(final_response)
         st.session_state.chat_history.append({
             "role": "assistant",
             "content": sanitized_response
@@ -1135,9 +1313,17 @@ def page_chat():
 
         # Store TTS audio by message index for persistence across reruns
         # เก็บ TTS audio ตาม index ข้อความเพื่อคงอยู่ระหว่าง reruns
-        if st.session_state.pending_ai_audio:
-            import base64
-            msg_index = len(st.session_state.chat_history) - 1
+        msg_index = len(st.session_state.chat_history) - 1
+        pending_chunks_b64 = st.session_state.get("pending_ai_audio_chunks_b64", [])
+        pending_chunks_mime = st.session_state.get("pending_ai_audio_chunks_mime", [])
+
+        if pending_chunks_b64 and len(pending_chunks_b64) == len(pending_chunks_mime):
+            st.session_state.tts_audio_chunks_b64_by_msg[msg_index] = list(pending_chunks_b64)
+            st.session_state.tts_audio_chunks_mime_by_msg[msg_index] = list(pending_chunks_mime)
+            st.session_state.pending_ai_audio_chunks_b64 = []
+            st.session_state.pending_ai_audio_chunks_mime = []
+
+        elif st.session_state.pending_ai_audio:
             audio_bytes = st.session_state.pending_ai_audio
 
             # Store raw bytes and detect MIME type
@@ -1150,13 +1336,19 @@ def page_chat():
 
             # Set one-shot autoplay flag
             st.session_state.autoplay_tts_msg_idx = msg_index
-
             st.session_state.pending_ai_audio = None
+
+        # Ensure per-round pending chunk buffers are reset before next request.
+        st.session_state.pending_ai_audio_chunks_b64 = []
+        st.session_state.pending_ai_audio_chunks_mime = []
 
         # Reset flags BEFORE rerun / รีเซ็ตสถานะก่อนรีรัน
         st.session_state.ai_responding = False
         st.session_state.ai_response_ready = False
         st.session_state.pending_ai_response = None
+        st.session_state.voice_streaming_tts_active = False
+        st.session_state.pending_ai_stream_text = ""
+        st.session_state.pending_ai_audio = None
         # Now trigger rerun to show the response / รีรันเพื่อแสดงคำตอบ
         st.rerun()
 
@@ -1174,6 +1366,10 @@ def page_chat():
         """
         # Only trigger rerun if AI is responding and response is ready
         # รีรันเฉพาะเมื่อ AI กำลังตอบและคำตอบพร้อมแล้ว
+        if st.session_state.get('ai_stream_dirty'):
+            st.session_state.ai_stream_dirty = False
+            st.rerun()
+
         if st.session_state.ai_responding and st.session_state.ai_response_ready:
             st.rerun()
         # If not ready, this fragment just re-runs itself silently
@@ -1206,35 +1402,78 @@ def page_chat():
         else:
             # AI Patient's message (left side) / ข้อความของผู้ป่วย AI (ซ้าย)
             # Check if we have TTS audio for this message (voice mode only)
-            has_audio = (current_mode == 'voice' and idx in st.session_state.tts_audio_b64_by_msg)
+            has_chunk_audio = (current_mode == 'voice' and idx in st.session_state.tts_audio_chunks_b64_by_msg)
+            has_single_audio = (current_mode == 'voice' and idx in st.session_state.tts_audio_b64_by_msg)
+            has_audio = has_chunk_audio or has_single_audio
 
             if has_audio:
                 # Message with speaker icon for replay using components.html for JavaScript
-                audio_b64 = st.session_state.tts_audio_b64_by_msg[idx]
-                audio_mime = st.session_state.tts_audio_mime_by_msg.get(idx, 'audio/mpeg')
                 msg_content = message['content']
                 # Calculate height: base 50px + ~18px per 100 chars
                 estimated_lines = max(1, len(msg_content) // 100 + 1)
                 iframe_height = min(50 + estimated_lines * 18, 250)
 
-                components.html(
-                    f"""
-                    <div style='display: flex; align-items: flex-start; gap: 6px; font-family: "Source Sans Pro", sans-serif;'>
-                        <div style='text-align: left; background-color: white; padding: 10px 14px;
-                            border-radius: 18px 18px 18px 4px;
-                            border: 2px solid #e3f2fd; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
-                            flex: 1; color: #37474f; font-size: 14px; line-height: 1.4; max-width: calc(100% - 40px);'>
-                            <b style='color: #2c5f7d;'>Patient:</b> {msg_content}
+                if has_chunk_audio:
+                    chunk_b64_list = st.session_state.tts_audio_chunks_b64_by_msg.get(idx, [])
+                    chunk_mime_list = st.session_state.tts_audio_chunks_mime_by_msg.get(idx, [])
+                    chunk_payload = [
+                        {"mime": mime, "b64": b64}
+                        for b64, mime in zip(chunk_b64_list, chunk_mime_list)
+                    ]
+                    chunk_payload_js = json.dumps(chunk_payload)
+
+                    components.html(
+                        f"""
+                        <div style='display: flex; align-items: flex-start; gap: 6px; font-family: "Source Sans Pro", sans-serif;'>
+                            <div style='text-align: left; background-color: white; padding: 10px 14px;
+                                border-radius: 18px 18px 18px 4px;
+                                border: 2px solid #e3f2fd; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+                                flex: 1; color: #37474f; font-size: 14px; line-height: 1.4; max-width: calc(100% - 40px);'>
+                                <b style='color: #2c5f7d;'>Patient:</b> {msg_content}
+                            </div>
+                            <button onclick='(function() {{
+                                const chunks = {chunk_payload_js};
+                                let idx = 0;
+                                const playNext = () => {{
+                                    if (idx >= chunks.length) return;
+                                    const item = chunks[idx++];
+                                    const audio = new Audio(`data:${{item.mime}};base64,${{item.b64}}`);
+                                    audio.onended = playNext;
+                                    audio.onerror = playNext;
+                                    const p = audio.play();
+                                    if (p && p.catch) p.catch(playNext);
+                                }};
+                                playNext();
+                            }})();'
+                                style='background: #4a90a4; color: white; border: none; border-radius: 50%;
+                                width: 28px; height: 28px; cursor: pointer; font-size: 12px; margin-top: 4px;
+                                box-shadow: 0 2px 4px rgba(0,0,0,0.2); flex-shrink: 0;'
+                                title='Replay audio'>🔊</button>
                         </div>
-                        <button onclick="new Audio('data:{audio_mime};base64,{audio_b64}').play()"
-                            style='background: #4a90a4; color: white; border: none; border-radius: 50%;
-                            width: 28px; height: 28px; cursor: pointer; font-size: 12px; margin-top: 4px;
-                            box-shadow: 0 2px 4px rgba(0,0,0,0.2); flex-shrink: 0;'
-                            title='Replay audio'>🔊</button>
-                    </div>
-                    """,
-                    height=iframe_height
-                )
+                        """,
+                        height=iframe_height
+                    )
+                else:
+                    audio_b64 = st.session_state.tts_audio_b64_by_msg[idx]
+                    audio_mime = st.session_state.tts_audio_mime_by_msg.get(idx, 'audio/mpeg')
+                    components.html(
+                        f"""
+                        <div style='display: flex; align-items: flex-start; gap: 6px; font-family: "Source Sans Pro", sans-serif;'>
+                            <div style='text-align: left; background-color: white; padding: 10px 14px;
+                                border-radius: 18px 18px 18px 4px;
+                                border: 2px solid #e3f2fd; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+                                flex: 1; color: #37474f; font-size: 14px; line-height: 1.4; max-width: calc(100% - 40px);'>
+                                <b style='color: #2c5f7d;'>Patient:</b> {msg_content}
+                            </div>
+                            <button onclick="new Audio('data:{audio_mime};base64,{audio_b64}').play()"
+                                style='background: #4a90a4; color: white; border: none; border-radius: 50%;
+                                width: 28px; height: 28px; cursor: pointer; font-size: 12px; margin-top: 4px;
+                                box-shadow: 0 2px 4px rgba(0,0,0,0.2); flex-shrink: 0;'
+                                title='Replay audio'>🔊</button>
+                        </div>
+                        """,
+                        height=iframe_height
+                    )
             else:
                 # Standard message without audio
                 st.markdown(
@@ -1245,6 +1484,18 @@ def page_chat():
                     f"<b style='color: #2c5f7d;'>Patient:</b> {message['content']}</div>",
                     unsafe_allow_html=True
                 )
+
+    # Live partial response while model is still streaming
+    live_stream_text = st.session_state.get('pending_ai_stream_text', '').strip()
+    if st.session_state.ai_responding and live_stream_text and not st.session_state.ai_response_ready:
+        st.markdown(
+            f"<div style='text-align: left; background-color: #f6fbff; padding: 12px 16px; "
+            f"border-radius: 18px 18px 18px 4px; margin: 8px 0; "
+            f"border: 2px dashed #b3d9e5; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); "
+            f"max-width: 80%; color: #2f5362;'>"
+            f"<b style='color: #2c5f7d;'>Patient (typing):</b> {live_stream_text}▌</div>",
+            unsafe_allow_html=True
+        )
 
     # ========================================================================
     # LOADING INDICATOR (Stable placeholder) / ตัวบอกสถานะโหลด (ตัวยึดตำแหน่งเสถียร)
@@ -1430,57 +1681,422 @@ def page_chat():
                 # Capture TTS settings before thread starts (thread-safe)
                 # บันทึกค่า TTS settings ก่อนเริ่ม thread (thread-safe)
                 tts_model_for_request = st.session_state.get('tts_model', TTS_MODEL_NAME)
-                tts_voice_for_request = st.session_state.get('tts_voice', TTS_VOICE_NAME)
+                default_tts_voice = (
+                    TTS_GEMINI_VOICE_NAME
+                    if str(tts_model_for_request).startswith("gemini-")
+                    else TTS_VOICE_NAME
+                )
+                tts_voice_for_request = st.session_state.get('tts_voice', default_tts_voice)
+                if str(tts_model_for_request).startswith("gemini-"):
+                    tts_voice_for_request = TTS_GEMINI_VOICE_NAME
                 tts_prompt_for_request = st.session_state.get('tts_prompt', TTS_STYLE_PROMPT)
+                st.session_state.pending_ai_stream_text = ""
+                st.session_state.ai_stream_dirty = False
+                st.session_state.pending_ai_response = None
+                st.session_state.ai_response_ready = False
+                st.session_state.pending_ai_audio = None
+                st.session_state.pending_ai_audio_chunks_b64 = []
+                st.session_state.pending_ai_audio_chunks_mime = []
+                st.session_state.live_tts_queue = []
+                st.session_state.voice_tts_round_id += 1
+                st.session_state.voice_streaming_tts_active = False
+                st.session_state.voice_generating_tts = False
 
                 # Start AI response thread
                 def ai_response_callback_voice():
                     """Background thread function to get AI response with TTS"""
                     round_started_at = time.perf_counter()
-
-                    ai_started_at = time.perf_counter()
-                    response = get_ai_response_threaded(
-                        st.session_state.chat_history,
-                        st.session_state.case_context
-                    )
-                    ai_elapsed_sec = time.perf_counter() - ai_started_at
-                    st.session_state.pending_ai_response = response
-
-                    # Generate TTS for voice mode
+                    first_token_at = None
+                    first_segment_queued_at = None
+                    first_audio_chunk_at = None
                     tts_elapsed_sec = 0.0
                     tts_status = "skipped"
                     tts_provider = "none"
-                    if response and TTS_AUTO_PLAY:
+                    tts_chunk_count = 0
+                    stream_tts_timeout_hit = False
+                    last_tts_error_msg = None
+                    tts_retry_scheduled = 0
+                    tts_retry_recovered = 0
+                    tts_total_attempts = 0
+                    tts_total_failures = 0
+                    tts_last_cause_code = "none"
+                    tts_last_cause_detail = "no_error"
+                    tts_inflight_calls = 0
+                    tts_max_parallel_calls = 0
+                    tts_call_lock = threading.Lock()
+
+                # Enable chunked TTS playback while streaming model tokens.
+                    stream_tts_enabled = bool(TTS_AUTO_PLAY)
+                    current_round_id = st.session_state.get("voice_tts_round_id", 0)
+                    tts_segment_queue = queue.Queue()
+                    tts_buffer = ""
+                    tts_worker_thread = None
+                    worker_timed_out = False
+                    stream_tts_model = tts_model_for_request
+                    stream_tts_voice = tts_voice_for_request
+                    stream_tts_prompt = tts_prompt_for_request or None
+    
+                    def _is_transient_tts_error(error_msg: str) -> bool:
+                        error_lower = (error_msg or "").lower()
+                        transient_markers = [
+                            "deadline",
+                            "timeout",
+                            "timed out",
+                            "gateway",
+                            "service unavailable",
+                            "unavailable",
+                            "502",
+                            "503",
+                            "504",
+                            "internal",
+                            "reset",
+                        ]
+                        return any(marker in error_lower for marker in transient_markers)
+    
+                    def synthesize_with_retry(tts_text: str, max_attempts: int):
+                        nonlocal tts_retry_scheduled, tts_retry_recovered
+                        nonlocal tts_total_attempts, tts_total_failures
+                        nonlocal tts_last_cause_code, tts_last_cause_detail
+                        nonlocal tts_inflight_calls, tts_max_parallel_calls
+                        last_error = None
+                        for attempt in range(1, max_attempts + 1):
+                            with tts_call_lock:
+                                tts_inflight_calls += 1
+                                tts_total_attempts += 1
+                                if tts_inflight_calls > tts_max_parallel_calls:
+                                    tts_max_parallel_calls = tts_inflight_calls
+                                inflight_snapshot = tts_inflight_calls
+    
+                            if inflight_snapshot > 1:
+                                log_event(
+                                    "WARNING",
+                                    "voice_tts",
+                                    "concurrent_tts_call_detected",
+                                    round_id=current_round_id,
+                                    inflight_calls=inflight_snapshot,
+                                )
+    
+                            try:
+                                audio_bytes_tts, tts_error = synthesize_speech(
+                                    tts_text,
+                                    model_name=stream_tts_model,
+                                    voice_name=stream_tts_voice,
+                                    style_prompt=stream_tts_prompt,
+                                )
+                            finally:
+                                with tts_call_lock:
+                                    tts_inflight_calls = max(0, tts_inflight_calls - 1)
+    
+                            if audio_bytes_tts:
+                                if attempt > 1:
+                                    tts_retry_recovered += 1
+                                    log_event(
+                                        "INFO",
+                                        "voice_tts",
+                                        "retry_recovered",
+                                        attempt=attempt,
+                                        max_attempts=max_attempts,
+                                        chars=len(tts_text),
+                                    )
+                                return audio_bytes_tts, None, attempt
+    
+                            last_error = tts_error
+                            tts_total_failures += 1
+                            tts_last_cause_code, tts_last_cause_detail = classify_tts_error(tts_error)
+                            if attempt < max_attempts and _is_transient_tts_error(tts_error):
+                                retry_sleep_sec = min(1.2, 0.3 * attempt)
+                                tts_retry_scheduled += 1
+                                log_event(
+                                    "WARNING",
+                                    "voice_tts",
+                                    "retry_scheduled",
+                                    attempt=attempt,
+                                    max_attempts=max_attempts,
+                                    wait_sec=retry_sleep_sec,
+                                    cause_code=tts_last_cause_code,
+                                    cause_detail=tts_last_cause_detail,
+                                    error=tts_error,
+                                )
+                                time.sleep(retry_sleep_sec)
+                                continue
+                            break
+    
+                        return None, last_error, max_attempts
+    
+                    if stream_tts_enabled:
+                        st.session_state.voice_streaming_tts_active = True
                         st.session_state.voice_generating_tts = True
                         tts_started_at = time.perf_counter()
-                        audio_bytes_tts, tts_error = synthesize_speech(
-                            response,
-                            model_name=tts_model_for_request,
-                            voice_name=tts_voice_for_request,
-                            style_prompt=tts_prompt_for_request or None,
-                        )
-                        tts_elapsed_sec = time.perf_counter() - tts_started_at
-                        st.session_state.voice_generating_tts = False
-                        if audio_bytes_tts:
-                            st.session_state.pending_ai_audio = audio_bytes_tts
-                            tts_status = "success"
+    
+                        def tts_worker():
+                            nonlocal tts_chunk_count, first_audio_chunk_at, stream_tts_timeout_hit
+                            drop_remaining_segments = False
+                            while True:
+                                segment = tts_segment_queue.get()
+                                if segment is None:
+                                    tts_segment_queue.task_done()
+                                    break
+    
+                                segment_text = segment.strip()
+                                if drop_remaining_segments or not segment_text:
+                                    tts_segment_queue.task_done()
+                                    continue
+    
+                                audio_bytes_tts, tts_error, attempts_used = synthesize_with_retry(
+                                    segment_text,
+                                    max_attempts=2,
+                                )
+    
+                                if audio_bytes_tts:
+                                    audio_mime = detect_audio_mime(audio_bytes_tts)
+                                    audio_b64 = base64.b64encode(audio_bytes_tts).decode("utf-8")
+                                    chunk_id = f"{current_round_id}-{st.session_state.tts_stream_chunk_counter}"
+                                    st.session_state.tts_stream_chunk_counter += 1
+                                    if first_audio_chunk_at is None:
+                                        first_audio_chunk_at = time.perf_counter()
+                                        log_event(
+                                            "PERF",
+                                            "voice_tts",
+                                            "first_audio_chunk_ready",
+                                            round_id=current_round_id,
+                                            elapsed_sec=(first_audio_chunk_at - round_started_at),
+                                        )
+                                    st.session_state.live_tts_queue.append({
+                                        "id": chunk_id,
+                                        "mime": audio_mime,
+                                        "b64": audio_b64,
+                                    })
+                                    st.session_state.pending_ai_audio_chunks_b64.append(audio_b64)
+                                    st.session_state.pending_ai_audio_chunks_mime.append(audio_mime)
+                                    tts_chunk_count += 1
+                                    st.session_state.ai_stream_dirty = True
+                                else:
+                                    last_tts_error_msg = tts_error
+                                    cause_code, cause_detail = classify_tts_error(tts_error)
+                                    log_event(
+                                        "WARNING",
+                                        "voice_tts",
+                                        "chunk_failed_after_retries",
+                                        round_id=current_round_id,
+                                        attempts=attempts_used,
+                                        cause_code=cause_code,
+                                        cause_detail=cause_detail,
+                                        error=tts_error,
+                                    )
+                                    if _is_transient_tts_error(tts_error):
+                                        stream_tts_timeout_hit = True
+                                        drop_remaining_segments = True
+                                        log_event(
+                                            "WARNING",
+                                            "voice_tts",
+                                            "stream_timeout_detected",
+                                            round_id=current_round_id,
+                                            action="skip_remaining_chunks",
+                                        )
+    
+                                tts_segment_queue.task_done()
+    
+                        tts_worker_thread = threading.Thread(target=tts_worker, daemon=True)
+                        add_script_run_ctx(tts_worker_thread)
+                        tts_worker_thread.start()
+    
+                    def stream_callback(delta_text: str, reset: bool = False):
+                        nonlocal tts_buffer, first_token_at, first_segment_queued_at
+                        if reset:
+                            st.session_state.pending_ai_stream_text = ""
+                            tts_buffer = ""
+                        elif delta_text:
+                            if first_token_at is None:
+                                first_token_at = time.perf_counter()
+                                log_event(
+                                    "PERF",
+                                    "voice_tts",
+                                    "first_token",
+                                    round_id=current_round_id,
+                                    elapsed_sec=(first_token_at - round_started_at),
+                                )
+                            st.session_state.pending_ai_stream_text += delta_text
+                            if stream_tts_enabled:
+                                tts_buffer += delta_text
+                                ready_segments, tts_buffer = extract_tts_ready_segments(tts_buffer)
+                                for segment in ready_segments:
+                                    if first_segment_queued_at is None:
+                                        first_segment_queued_at = time.perf_counter()
+                                    log_event(
+                                        "DEBUG",
+                                        "voice_tts",
+                                        "segment_queued",
+                                        round_id=current_round_id,
+                                        chars=len(segment),
+                                        sentence_only=STREAM_TTS_SENTENCE_ONLY,
+                                    )
+                                    tts_segment_queue.put(segment)
+                        st.session_state.ai_stream_dirty = True
+    
+                    ai_started_at = time.perf_counter()
+                    response = get_ai_response_threaded(
+                        st.session_state.chat_history,
+                        st.session_state.case_context,
+                        stream_callback=stream_callback,
+                    )
+                    ai_elapsed_sec = time.perf_counter() - ai_started_at
+                    st.session_state.pending_ai_response = response
+    
+                    # Flush trailing text to TTS queue and wait for remaining chunks.
+                    if response and stream_tts_enabled:
+                        trailing_segments, tts_buffer = extract_tts_ready_segments(tts_buffer, force_flush=True)
+                        for segment in trailing_segments:
+                            if first_segment_queued_at is None:
+                                first_segment_queued_at = time.perf_counter()
+                            log_event(
+                                "DEBUG",
+                                "voice_tts",
+                                "trailing_segment_queued",
+                                round_id=current_round_id,
+                                chars=len(segment),
+                                sentence_only=STREAM_TTS_SENTENCE_ONLY,
+                            )
+                            tts_segment_queue.put(segment)
+                        tts_segment_queue.put(None)
+    
+                        if tts_worker_thread:
+                            tts_worker_thread.join(timeout=90)
+                            if tts_worker_thread.is_alive():
+                                worker_timed_out = True
+                                log_event(
+                                    "WARNING",
+                                    "voice_tts",
+                                    "worker_timeout",
+                                    round_id=current_round_id,
+                                    join_timeout_sec=90,
+                                )
+    
+                        if worker_timed_out:
+                            # Avoid duplicate in-flight TTS calls: skip full-response fallback
+                            # while worker is still running.
+                            tts_status = "stream_timeout"
+                            tts_provider = "genai_or_cloud"
+                        elif tts_chunk_count > 0:
+                            tts_status = "stream_success"
                             tts_provider = "genai_or_cloud"
                         else:
-                            tts_status = "failed"
-                            tts_provider = "genai_or_cloud"
-                            print(f"[WARNING] TTS failed: {tts_error}")
+                            # Fallback: if chunking produced no playable audio, synthesize full
+                            # response with the SAME requested model (no model fallback).
+                            if stream_tts_timeout_hit:
+                                log_event(
+                                    "WARNING",
+                                    "voice_tts",
+                                    "fallback_same_model_retry",
+                                    round_id=current_round_id,
+                                    reason="stream_timeout",
+                                )
+    
+                            audio_bytes_tts, tts_error, attempts_used = synthesize_with_retry(
+                                response,
+                                max_attempts=3,
+                            )
+                            if audio_bytes_tts:
+                                st.session_state.pending_ai_audio = audio_bytes_tts
+                                if first_audio_chunk_at is None:
+                                    first_audio_chunk_at = time.perf_counter()
+                                    log_event(
+                                        "PERF",
+                                        "voice_tts",
+                                        "fallback_first_audio_ready",
+                                        round_id=current_round_id,
+                                        elapsed_sec=(first_audio_chunk_at - round_started_at),
+                                    )
+                                tts_status = (
+                                    "fallback_same_model_after_stream_timeout_success"
+                                    if stream_tts_timeout_hit
+                                    else "fallback_same_model_success"
+                                )
+                                tts_provider = "genai_or_cloud"
+                            else:
+                                tts_status = (
+                                    "failed_same_model_after_stream_timeout"
+                                    if stream_tts_timeout_hit
+                                    else "failed_same_model"
+                                )
+                                tts_provider = "genai_or_cloud"
+                                last_tts_error_msg = tts_error
+                                cause_code, cause_detail = classify_tts_error(tts_error)
+                                log_event(
+                                    "ERROR",
+                                    "voice_tts",
+                                    "fallback_same_model_failed",
+                                    round_id=current_round_id,
+                                    attempts=attempts_used,
+                                    cause_code=cause_code,
+                                    cause_detail=cause_detail,
+                                    error=tts_error,
+                                )
+    
+                        tts_elapsed_sec = time.perf_counter() - tts_started_at
+                        st.session_state.voice_generating_tts = False
+                        st.session_state.voice_streaming_tts_active = False
                     elif response and not TTS_AUTO_PLAY:
                         tts_status = "disabled"
-
+                    elif not response and stream_tts_enabled:
+                        tts_segment_queue.put(None)
+                        if tts_worker_thread:
+                            tts_worker_thread.join(timeout=30)
+                        st.session_state.voice_generating_tts = False
+                        st.session_state.voice_streaming_tts_active = False
+    
                     total_elapsed_sec = time.perf_counter() - round_started_at
-                    print(
-                        f"[PERF] Voice round trip: {total_elapsed_sec:.2f}s "
-                        f"(ai={ai_elapsed_sec:.2f}s, tts={tts_elapsed_sec:.2f}s, "
-                        f"tts_status={tts_status}, tts_provider={tts_provider}, "
-                        f"tts_requested_model={tts_model_for_request}, "
-                        f"tts_requested_voice={tts_voice_for_request})"
+                    ttft_sec = (first_token_at - round_started_at) if first_token_at else -1
+                    first_tts_segment_sec = (
+                        (first_segment_queued_at - round_started_at)
+                        if first_segment_queued_at else -1
                     )
-
+                    ttfa_sec = (first_audio_chunk_at - round_started_at) if first_audio_chunk_at else -1
+                    if worker_timed_out or stream_tts_timeout_hit or tts_status.startswith("failed"):
+                        if worker_timed_out:
+                            cause_code, cause_detail = ("worker_timeout", "TTS worker did not finish in join timeout")
+                        elif tts_last_cause_code and tts_last_cause_code != "none":
+                            cause_code, cause_detail = (tts_last_cause_code, tts_last_cause_detail)
+                        else:
+                            cause_code, cause_detail = classify_tts_error(last_tts_error_msg or "")
+                        log_event(
+                            "WARNING" if cause_code != "unknown" else "ERROR",
+                            "voice_tts",
+                            "round_root_cause",
+                            round_id=current_round_id,
+                            tts_status=tts_status,
+                            cause_code=cause_code,
+                            cause_detail=cause_detail,
+                            error=last_tts_error_msg,
+                            tts_attempts=tts_total_attempts,
+                            retries_scheduled=tts_retry_scheduled,
+                            retries_recovered=tts_retry_recovered,
+                            tts_failures=tts_total_failures,
+                            max_parallel_tts_calls=tts_max_parallel_calls,
+                        )
+                    log_event(
+                        "PERF",
+                        "voice_tts",
+                        "round_trip",
+                        round_id=current_round_id,
+                        total_sec=total_elapsed_sec,
+                        ai_sec=ai_elapsed_sec,
+                        tts_sec=tts_elapsed_sec,
+                        ttft_sec=ttft_sec,
+                        first_tts_segment_sec=first_tts_segment_sec,
+                        ttfa_sec=ttfa_sec,
+                        tts_status=tts_status,
+                        tts_provider=tts_provider,
+                        tts_chunks=tts_chunk_count,
+                        stream_tts_model=stream_tts_model,
+                        requested_tts_model=tts_model_for_request,
+                        requested_tts_voice=tts_voice_for_request,
+                        tts_attempts=tts_total_attempts,
+                        retries_scheduled=tts_retry_scheduled,
+                        retries_recovered=tts_retry_recovered,
+                        tts_failures=tts_total_failures,
+                        max_parallel_tts_calls=tts_max_parallel_calls,
+                    )
+    
                     st.session_state.ai_response_ready = True
 
                 thread = threading.Thread(target=ai_response_callback_voice, daemon=True)
@@ -1496,6 +2112,8 @@ def page_chat():
                 st.info(f"🎙️ {STATUS_TRANSCRIBING}")
             elif st.session_state.voice_generating_tts:
                 st.info(f"🔊 {STATUS_GENERATING_TTS}")
+            elif st.session_state.voice_streaming_tts_active:
+                st.info("🔊 กำลังสตรีมเสียงตอบกลับ…")
 
             # Voice input section / ส่วนป้อนเสียง
             voice_col1, voice_col2 = st.columns([1, 2])
@@ -1642,6 +2260,63 @@ def page_chat():
                         st.session_state.last_processed_audio_id = None
                         st.rerun()
 
+            # Live chunked TTS autoplay queue (streaming) via components.html
+            # คิวเล่นเสียงแบบ chunk ระหว่างสตรีมข้อความ
+            live_tts_queue = st.session_state.get("live_tts_queue", [])
+            current_round_id = st.session_state.get("voice_tts_round_id", 0)
+            if live_tts_queue:
+                live_tts_payload = json.dumps(live_tts_queue)
+                components.html(
+                    f"""
+                    <script>
+                    (function() {{
+                        const roundId = {current_round_id};
+                        const chunks = {live_tts_payload};
+                        const host = window.parent;
+
+                        if (!host.__codexVoiceTTSPlayer || host.__codexVoiceTTSPlayer.roundId !== roundId) {{
+                            host.__codexVoiceTTSPlayer = {{
+                                roundId,
+                                queue: [],
+                                seen: {{}},
+                                playing: false,
+                                playNext: function() {{
+                                    if (this.playing || this.queue.length === 0) return;
+                                    const item = this.queue.shift();
+                                    this.playing = true;
+                                    const audio = new Audio(`data:${{item.mime}};base64,${{item.b64}}`);
+                                    audio.onended = () => {{
+                                        this.playing = false;
+                                        this.playNext();
+                                    }};
+                                    audio.onerror = () => {{
+                                        this.playing = false;
+                                        this.playNext();
+                                    }};
+                                    const p = audio.play();
+                                    if (p && p.catch) {{
+                                        p.catch(() => {{
+                                            this.playing = false;
+                                            this.playNext();
+                                        }});
+                                    }}
+                                }},
+                            }};
+                        }}
+
+                        const player = host.__codexVoiceTTSPlayer;
+                        chunks.forEach((item) => {{
+                            if (!item || !item.id || player.seen[item.id]) return;
+                            player.seen[item.id] = true;
+                            player.queue.push(item);
+                        }});
+                        player.playNext();
+                    }})();
+                    </script>
+                    """,
+                    height=0,
+                )
+
             # One-shot TTS autoplay via hidden audio element
             # เล่น TTS อัตโนมัติครั้งเดียวผ่าน hidden audio element
             if st.session_state.autoplay_tts_msg_idx is not None:
@@ -1677,17 +2352,51 @@ def page_chat():
 
                 # 2. Set AI responding flag / ตั้งสถานะว่า AI กำลังตอบ
                 st.session_state.ai_responding = True
+                st.session_state.pending_ai_stream_text = ""
+                st.session_state.ai_stream_dirty = False
+                st.session_state.pending_ai_response = None
+                st.session_state.ai_response_ready = False
 
                 # 3. Define callback function for thread / กำหนดฟังก์ชันสำหรับเธรด
                 def ai_response_callback():
                     """Background thread function to get AI response"""
+                    round_started_at = time.perf_counter()
+                    first_token_at = None
+
+                    def stream_callback(delta_text: str, reset: bool = False):
+                        nonlocal first_token_at
+                        if reset:
+                            st.session_state.pending_ai_stream_text = ""
+                        elif delta_text:
+                            if first_token_at is None:
+                                first_token_at = time.perf_counter()
+                                log_event(
+                                    "PERF",
+                                    "text_llm",
+                                    "first_token",
+                                    elapsed_sec=(first_token_at - round_started_at),
+                                )
+                            st.session_state.pending_ai_stream_text += delta_text
+                        st.session_state.ai_stream_dirty = True
+
                     response = get_ai_response_threaded(
                         st.session_state.chat_history,
-                        st.session_state.case_context
+                        st.session_state.case_context,
+                        stream_callback=stream_callback,
                     )
                     # Store response and set ready flag / เก็บคำตอบและตั้งสถานะพร้อม
                     st.session_state.pending_ai_response = response
                     st.session_state.ai_response_ready = True
+                    total_elapsed_sec = time.perf_counter() - round_started_at
+                    ttft_sec = (first_token_at - round_started_at) if first_token_at else -1
+                    log_event(
+                        "PERF",
+                        "text_llm",
+                        "round_trip",
+                        total_sec=total_elapsed_sec,
+                        ttft_sec=ttft_sec,
+                        chars=len(response) if response else 0,
+                    )
 
                 # 4. Start background thread with Streamlit context / เริ่มเธรดพื้นหลังพร้อม Streamlit context
                 thread = threading.Thread(target=ai_response_callback, daemon=True)
